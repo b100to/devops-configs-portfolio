@@ -1,0 +1,406 @@
+executor: KubernetesExecutor
+
+useStandardNaming: true
+revisionHistoryLimit: 1
+airflowVersion: "3.3.0"
+defaultAirflowTag: "3.3.0"
+
+rbac:
+  create: true
+  createSCCRoleBinding: true
+
+fernetKeySecretName: airflow-green-secrets
+apiSecretKeySecretName: airflow-green-secrets
+jwtSecretName: airflow-green-secrets
+
+data:
+  metadataSecretName: airflow-mate-db-green
+
+config:
+  core:
+    base_url: https://airflow-green.acme.example
+    load_examples: "False"
+    dagbag_import_timeout: 90 # 60→90: 느린 파싱 시 hard kill 전에 clean import-timeout 에러 유도
+    plugins_folder: /opt/airflow/dags/plugins
+  dag_processor:
+    # 기본 50s → 120s. dag_file_processor_timeout > dagbag_import_timeout(90) 로 두어
+    # 파싱이 hang하면 import_timeout(90s)이 먼저 터져 "어느 파일 timeout" 에러가 UI에 뜨고,
+    # processor 강제 kill(120s)은 최후 안전장치로만 동작.
+    dag_file_processor_timeout: 120
+  api:
+    base_url: https://airflow-green.acme.example
+    expose_config: "true"
+  logging:
+    remote_logging: 'True'
+    remote_base_log_folder: s3://prd.acme.airflow.logs.v3/airflow-logs/
+    logging_level: INFO
+  metrics:
+    metrics_use_pattern_match: "True"
+    statsd_on: "True"
+    # statsd_host/port는 차트 기본값(<release>-statsd:9125, Prometheus statsd-exporter) 사용
+  kubernetes:
+    delete_worker_pods_on_failure: "False" # green 디버깅 중 실패 pod 로그 확인용
+    worker_pods_pending_timeout: 300
+
+env:
+  - name: AIRFLOW__CORE__LOAD_EXAMPLES
+    value: "False"
+  - name: AIRFLOW__CORE__ENABLE_XCOM_PICKLING
+    value: "False"
+  - name: AIRFLOW__CORE__TEST_CONNECTION
+    value: "True"
+  - name: AIRFLOW__CORE__STORE_SERIALIZED_DAGS
+    value: "True"
+  - name: AIRFLOW__CORE__STORE_DAG_CODE
+    value: "True"
+  - name: AIRFLOW__CORE__DEFAULT_TIMEZONE
+    value: Asia/Seoul
+  - name: AIRFLOW__FAB__ENABLE_PROXY_FIX
+    value: "True"
+  - name: AIRFLOW__SECRETS__BACKEND
+    value: airflow.providers.amazon.aws.secrets.secrets_manager.SecretsManagerBackend
+  - name: AIRFLOW__SECRETS__BACKEND_KWARGS
+    value: '{"connections_prefix": "airflow/connections", "variables_prefix": "airflow/variables", "region_name": "ap-northeast-2"}'
+  - name: AIRFLOW__LOGGING__REMOTE_LOGGING
+    value: 'True'
+  - name: AIRFLOW__LOGGING__REMOTE_BASE_LOG_FOLDER
+    value: s3://prd.acme.airflow.logs.v3/airflow-logs/
+  - name: AIRFLOW__LOGGING__REMOTE_LOG_LEVEL
+    value: INFO
+
+extraEnvFrom: |
+  - secretRef:
+      name: airflow-green-secrets
+#  - secretRef:
+#      name: airflow-green-aws-secret
+
+tolerations:
+  - key: node-group-type
+    operator: Equal
+    value: airflow
+    effect: NoSchedule
+nodeSelector:
+  node-group-type: airflow
+
+dags:
+  persistence:
+    enabled: true
+    storageClassName: efs-sc
+    accessMode: ReadWriteMany
+    existingClaim: airflow-green-dags-pvc
+  gitSync:
+    enabled: false
+
+migrateDatabaseJob:
+  serviceAccount:
+    create: true
+    name: airflow-green-migrate-database-job-sa
+    annotations:
+      eks.amazonaws.com/role-arn: arn:aws:iam::222222222222:role/eks-pod-identity-airflow-green-v2
+  useHelmHooks: false
+  applyCustomEnv: false
+  jobAnnotations:
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+  # 짧게 끝나는 job이라 실측 peak 미포착(스크랩<수명). airflow python 런타임 baseline 기준.
+  # 배포를 gate하는 Sync hook이므로 request로 Burstable QoS 부여(노드 압박 시 축출 방지).
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m # 짧은 job, import burst throttle은 양성(배포 시 잠깐)
+      memory: 512Mi
+
+createUserJob:
+  serviceAccount:
+    create: true
+    name: airflow-green-create-user-job-sa
+    annotations:
+      eks.amazonaws.com/role-arn: arn:aws:iam::222222222222:role/eks-pod-identity-airflow-green-v2
+  useHelmHooks: false
+  applyCustomEnv: false
+  jobAnnotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+  # PostSync hook. 짧은 job이라 baseline 기준(실측 peak 미포착).
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m # 짧은 job, import burst throttle은 양성(배포 시 잠깐)
+      memory: 512Mi
+
+#scheduler:
+#  enabled: false
+
+scheduler:
+  serviceAccount:
+    create: true
+    name: airflow-green-scheduler-sa
+    annotations:
+      eks.amazonaws.com/role-arn: arn:aws:iam::222222222222:role/eks-pod-identity-airflow-green-v2
+  replicas: 1
+  revisionHistoryLimit: 1
+  resources:
+    requests:
+      cpu: 300m # 실사용 p95 122m/max 234m + spike 여유
+      memory: 800Mi
+    limits:
+      cpu: 1000m # spike 흡수 여유 (max 234m 대비 넉넉)
+      memory: 2Gi
+  podAnnotations:
+    sidecar.istio.io/inject: "true"
+  # plugins 마운트
+  extraVolumes:
+    - name: airflow-plugins
+      persistentVolumeClaim:
+        claimName: airflow-green-dags-pvc
+  extraVolumeMounts:
+    - name: airflow-plugins
+      mountPath: /opt/airflow/dags/plugins
+      subPath: plugins
+
+#triggerer:
+#  enabled: false
+
+triggerer:
+  enabled: true
+  serviceAccount:
+    create: true
+    name: airflow-green-triggerer-sa
+    annotations:
+      eks.amazonaws.com/role-arn: arn:aws:iam::222222222222:role/eks-pod-identity-airflow-green-v2
+  replicas: 1
+  revisionHistoryLimit: 1
+  persistence:
+    enabled: false
+  resources:
+    # ⚠️ triggers_running=0 (deferrable operator 미사용) — 확인 후 triggerer.enabled:false 로 통째 제거 가능
+    requests:
+      cpu: 120m # 실사용 p95 80m/max 90m
+      memory: 512Mi # 실사용 max 339Mi + 스파이크 484Mi 여유
+    limits:
+      cpu: 500m # 실사용 max 90m 대비 넉넉 (init startup throttle은 양성)
+      memory: 1Gi # 스파이크 484Mi 대비 넉넉
+  podAnnotations:
+    sidecar.istio.io/inject: "true"
+  # plugins 마운트
+  extraVolumes:
+    - name: airflow-plugins
+      persistentVolumeClaim:
+        claimName: airflow-green-dags-pvc
+  extraVolumeMounts:
+    - name: airflow-plugins
+      mountPath: /opt/airflow/dags/plugins
+      subPath: plugins
+
+#dagProcessor:
+#  enabled: false
+
+dagProcessor:
+  enabled: true
+  replicas: 1
+  revisionHistoryLimit: 1
+  serviceAccount:
+    create: true
+    name: airflow-green-dag-processor-sa
+    annotations:
+      eks.amazonaws.com/role-arn: arn:aws:iam::222222222222:role/eks-pod-identity-airflow-green-v2
+  resources:
+    requests:
+      cpu: 500m # 3일 max 398m + 여유 (max에 붙지 않게)
+      memory: 1Gi # 3일 max 827Mi + 여유
+    limits:
+      cpu: 1500m # throttle 50% 완화 (eager DAG 파싱 부하 잔존). task전환 시 1000m 환원 가능
+      memory: 2Gi
+  podAnnotations:
+    sidecar.istio.io/inject: "true"
+  # plugins 마운트
+  extraVolumes:
+    - name: airflow-plugins
+      persistentVolumeClaim:
+        claimName: airflow-green-dags-pvc
+  extraVolumeMounts:
+    - name: airflow-plugins
+      mountPath: /opt/airflow/dags/plugins
+      subPath: plugins
+
+workers:
+  replicas: 1
+  revisionHistoryLimit: 1
+  serviceAccount:
+    create: true
+    name: airflow-green-worker
+    annotations:
+      eks.amazonaws.com/role-arn: arn:aws:iam::222222222222:role/eks-pod-identity-airflow-green-v2
+  podAnnotations:
+      sidecar.istio.io/inject: "true"
+  extraVolumes:
+    - name: airflow-plugins
+      persistentVolumeClaim:
+        claimName: airflow-green-dags-pvc
+  extraVolumeMounts:
+    - name: airflow-plugins
+      mountPath: /opt/airflow/dags/plugins
+      subPath: plugins
+
+apiServer:
+  apiServerConfig: |
+    import os
+    from flask_appbuilder import expose
+    from flask_appbuilder.security.views import AuthOAuthView
+    from flask_appbuilder.security.manager import AUTH_OAUTH
+    from airflow.providers.fab.auth_manager.security_manager.override import FabAirflowSecurityManagerOverride
+
+    AUTH_TYPE = AUTH_OAUTH
+    AUTH_USER_REGISTRATION = True
+    AUTH_USER_REGISTRATION_ROLE = "Admin"
+    AUTH_ROLES_SYNC_AT_LOGIN = True
+    AUTH_ROLES_MAPPING = {
+      "main": ["Admin"],
+      "authentik Admins": ["Admin"],
+    }
+
+    class AutoRedirectAuthOAuthView(AuthOAuthView):
+      @expose("/login/")
+      @expose("/login/<provider>")
+      def login(self, provider=None):
+        provider = provider or "authentik"
+        return super().login(provider)
+
+    class AcmeSecurityManager(FabAirflowSecurityManagerOverride):
+      authoauthview = AutoRedirectAuthOAuthView
+
+    SECURITY_MANAGER_CLASS = AcmeSecurityManager
+
+    OAUTH_PROVIDERS = [
+      {
+        "name": "authentik",
+        "icon": "fa-circle-o",
+        "token_key": "access_token",
+        "remote_app": {
+          "client_id": "airflow-green",
+          "client_secret": os.environ.get("AIRFLOW__WEBSERVER__OAUTH_CLIENT_SECRET"),
+          "server_metadata_url": "https://sso.acme.example/application/o/airflow-green/.well-known/openid-configuration",
+          "client_kwargs": {
+            "scope": "openid profile email groups",
+          },
+        },
+      }
+    ]
+  serviceAccount:
+    create: true
+    name: airflow-green-api-server-sa
+    annotations:
+      eks.amazonaws.com/role-arn: arn:aws:iam::222222222222:role/eks-pod-identity-airflow-green-v2
+  replicas: 1
+  revisionHistoryLimit: 1
+  resources:
+    requests:
+      cpu: 150m # 3일 max 138m + 여유 (spike 대비 보장선)
+      memory: 1280Mi # 3일 max 903Mi + 여유 (계속 증가 특성)
+    limits:
+      cpu: 500m # 본 컨테이너 max 138m 대비 넉넉 (init startup throttle은 양성이라 감수)
+      memory: 2Gi # max 903Mi 대비 2배 여유
+  startupProbe:
+    timeoutSeconds: 60
+    failureThreshold: 20
+    periodSeconds: 10
+    scheme: HTTP
+  podAnnotations:
+    sidecar.istio.io/inject: "true"
+  # plugins 마운트
+  extraVolumes:
+    - name: airflow-plugins
+      persistentVolumeClaim:
+        claimName: airflow-green-dags-pvc
+  extraVolumeMounts:
+    - name: airflow-plugins
+      mountPath: /opt/airflow/dags/plugins
+      subPath: plugins
+
+cleanup:
+  enabled: true
+  serviceAccount:
+    create: true
+    name: airflow-green-cleanup-sa
+    annotations:
+      eks.amazonaws.com/role-arn: arn:aws:iam::222222222222:role/eks-pod-identity-airflow-green-v2
+  schedule: 0 0 1 * *
+  # 월 1회 pod 정리 CronJob. 비핵심이나 baseline 소량 부여.
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: 500m # 짧은 job, import burst throttle은 양성(배포 시 잠깐)
+      memory: 512Mi
+
+postgresql:
+  enabled: false
+
+flower:
+  enabled: false
+
+redis:
+  enabled: false
+
+statsd:
+  # Prometheus statsd-exporter 활성화 (kube-prometheus-stack prd.yaml의 airflow-statsd ServiceMonitor가 스크랩)
+  enabled: true
+  resources:
+    requests:
+      cpu: 50m
+      memory: 256Mi # 3일 max 197Mi + 여유 (ttl로 bounded지만 task 많을 때 스파이크)
+    limits:
+      cpu: 200m
+      memory: 512Mi # max 197Mi 대비 여유 (256은 77%로 빠듯)
+  cache:
+    # ttl=0s(무한 보관)이면 ti.running.<pool>.<dag>.<task> 등 이름에 식별자가 박힌
+    # unmapped 메트릭이 task 종료 후에도 영원히 남아 statsd 메모리가 무한 증가(→OOM).
+    # 1h로 두면 1시간 미갱신 series는 exporter /metrics 에서 만료되어 메모리가 bounded.
+    # 이미 Prometheus(TSDB 15d)에 스크랩된 과거 데이터는 영향 없음(그대로 조회 가능).
+    ttl: "1h"
+  # community StatsD 매핑 중 "기본 매핑이 안 다루는 규칙만" 추가한다.
+  # ⚠️ 전체 community 매핑을 넣으면 glob 규칙(*.scheduler_heartbeat 등)이 기본 regex 규칙보다
+  #    먼저 매칭돼 airflow_* → af_agg_* 로 metric 이름이 바뀜(대시보드가 airflow_* 를 못 찾음).
+  #    따라서 겹치지 않는 신규 metric만 남긴다: af_agg_ti_finish{dag_id,task_id,state}(per-DAG/task 실패 분해),
+  #    af_agg_ti_start, zombies_killed, sla_email_notification_failure, dag.callback_exceptions, celery.task_timeout_error.
+  extraMappings:
+    - match: "*.ti.start.*.*"
+      match_metric_type: counter
+      name: af_agg_ti_start
+      labels:
+        airflow_id: $1
+        dag_id: $2
+        task_id: $3
+    - match: "*.ti.finish.*.*.*"
+      match_metric_type: counter
+      name: af_agg_ti_finish
+      labels:
+        airflow_id: $1
+        dag_id: $2
+        task_id: $3
+        state: $4
+    - match: "*.zombies_killed"
+      match_metric_type: counter
+      name: af_agg_zombies_killed
+      labels:
+        airflow_id: $1
+    - match: "*.sla_email_notification_failure"
+      match_metric_type: counter
+      name: af_agg_sla_email_notification_failure
+      labels:
+        airflow_id: $1
+    - match: "*.dag.callback_exceptions"
+      match_metric_type: counter
+      name: af_agg_dag_callback_exceptions
+      labels:
+        airflow_id: $1
+    - match: "*.celery.task_timeout_error"
+      match_metric_type: counter
+      name: af_agg_celery_task_timeout_error
+      labels:
+        airflow_id: $1

@@ -1,0 +1,58 @@
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: datadog-api-key
+  namespace: datadog
+spec:
+  refreshInterval: "15m"
+  secretStoreRef:
+    name: aws-secrets-store
+    kind: ClusterSecretStore
+  target:
+    name: datadog-api-key
+    creationPolicy: Owner
+  data:
+    - secretKey: api-key
+      remoteRef:
+        key: eks/acme-main-v2-prd
+        property: DD_API_KEY
+
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: datadog-app-key
+  namespace: datadog
+spec:
+  refreshInterval: "15m"
+  secretStoreRef:
+    name: aws-secrets-store
+    kind: ClusterSecretStore
+  target:
+    name: datadog-app-key
+    creationPolicy: Owner
+  data:
+    - secretKey: app-key
+      remoteRef:
+        key: eks/acme-main-v2-prd
+        property: DD_APP_KEY
+
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: datadog-cluster-agent-token
+  namespace: datadog
+spec:
+  refreshInterval: "15m"
+  secretStoreRef:
+    name: aws-secrets-store
+    kind: ClusterSecretStore
+  target:
+    name: datadog-cluster-agent-token
+    creationPolicy: Owner
+  data:
+    - secretKey: token
+      remoteRef:
+        key: eks/acme-main-v2-prd
+        property: DD_CLUSTER_AGENT_TOKEN

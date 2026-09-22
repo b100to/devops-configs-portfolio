@@ -1,0 +1,132 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: manual-scale-up
+  namespace: default
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      serviceAccountName: multi-scaler-sa
+      containers:
+        - name: scaler
+          image: alpine:latest
+          env:
+            - name: SLACK_WEBHOOK_URL
+              valueFrom:
+                secretKeyRef:
+                  name: slack-webhook
+                  key: webhook-url
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "=== 수동 서버 켜기 실행 ==="
+
+              # kubectl과 curl, tzdata 설치
+              apk add --no-cache kubectl curl tzdata
+
+              # 시간대 설정
+              export TZ='Asia/Seoul'
+              echo "현재 시간: $(date)"
+
+              # 현재 상태 확인 (켜기 전)
+              echo "=== 현재 상태 확인 ==="
+
+              # 모든 네임스페이스 가져오기 (karpenter만 제외)
+              NAMESPACES=$(kubectl get namespaces -o jsonpath='{.items[*].metadata.name}' | tr ' ' '\n' | grep -v '^karpenter$')
+
+              TOTAL_DEPLOYMENTS=0
+              TOTAL_STATEFULSETS=0
+
+              for NS in $NAMESPACES; do
+                DEPLOY_COUNT=$(kubectl get deployment -n $NS --no-headers 2>/dev/null | wc -l | tr -d ' ')
+                STS_COUNT=$(kubectl get statefulset -n $NS --no-headers 2>/dev/null | wc -l | tr -d ' ')
+
+                if [ "$DEPLOY_COUNT" -gt 0 ] || [ "$STS_COUNT" -gt 0 ]; then
+                  echo "[$NS] Deployments: ${DEPLOY_COUNT}, StatefulSets: ${STS_COUNT}"
+                  TOTAL_DEPLOYMENTS=$((TOTAL_DEPLOYMENTS + DEPLOY_COUNT))
+                  TOTAL_STATEFULSETS=$((TOTAL_STATEFULSETS + STS_COUNT))
+                fi
+              done
+
+              echo "총계 - Deployments: ${TOTAL_DEPLOYMENTS}개, StatefulSets: ${TOTAL_STATEFULSETS}개"
+
+              # 서버 켜기 (karpenter 제외)
+              echo "=== 모든 네임스페이스 스케일 업 시작 (karpenter 제외) ==="
+
+              for NS in $NAMESPACES; do
+                # kube-system의 경우 coredns는 이미 실행 중이므로 스킵
+                if [ "$NS" = "kube-system" ]; then
+                  echo "[$NS] Scaling up deployments (coredns 제외)..."
+
+                  # kube-system의 모든 deployment 가져오기
+                  KUBE_DEPLOYMENTS=$(kubectl get deployment -n kube-system -o jsonpath='{.items[*].metadata.name}')
+
+                  for DEPLOY in $KUBE_DEPLOYMENTS; do
+                    if [ "$DEPLOY" != "coredns" ]; then
+                      echo "  - Scaling up $DEPLOY"
+                      kubectl scale deployment -n kube-system "$DEPLOY" --replicas=1
+                    else
+                      echo "  - Skipping coredns (이미 실행 중)"
+                    fi
+                  done
+
+                  # kube-system의 statefulset도 처리
+                  STS_COUNT=$(kubectl get statefulset -n kube-system --no-headers 2>/dev/null | wc -l | tr -d ' ')
+                  if [ "$STS_COUNT" -gt 0 ]; then
+                    echo "[$NS] Scaling up ${STS_COUNT} statefulsets..."
+                    kubectl scale statefulset --all --replicas=1 -n kube-system
+                  fi
+                else
+                  # 다른 네임스페이스는 모두 스케일 업
+                  DEPLOY_COUNT=$(kubectl get deployment -n $NS --no-headers 2>/dev/null | wc -l | tr -d ' ')
+                  STS_COUNT=$(kubectl get statefulset -n $NS --no-headers 2>/dev/null | wc -l | tr -d ' ')
+
+                  if [ "$DEPLOY_COUNT" -gt 0 ]; then
+                    echo "[$NS] Scaling up ${DEPLOY_COUNT} deployments..."
+                    kubectl scale deployment --all --replicas=1 -n $NS
+                  fi
+
+                  if [ "$STS_COUNT" -gt 0 ]; then
+                    echo "[$NS] Scaling up ${STS_COUNT} statefulsets..."
+                    kubectl scale statefulset --all --replicas=1 -n $NS
+                  fi
+                fi
+              done
+
+              echo "✅ 모든 리소스 스케일 업 완료 (karpenter, coredns 제외)"
+
+              # 잠시 대기
+              sleep 10
+
+              # 현재 시간을 변수로 저장 (KST 확인)
+              echo "DEBUG - TZ: $TZ"
+              echo "DEBUG - date output: $(date)"
+              CURRENT_TIME=$(TZ='Asia/Seoul' date '+%Y-%m-%d %H:%M:%S')
+              echo "DEBUG - CURRENT_TIME: $CURRENT_TIME"
+
+              # 슬랙 알림 전송
+              echo "=== 슬랙 알림 전송 ==="
+              curl -X POST -H 'Content-type: application/json' \
+                --data @- \
+                "$SLACK_WEBHOOK_URL" << EOF
+              {
+                "text": "🔧 *[수동실행] 서버 가동*",
+                "attachments": [
+                  {
+                    "color": "good",
+                    "fields": [
+                      {"title": "시간", "value": "$CURRENT_TIME", "short": true},
+                      {"title": "실행방식", "value": "수동 실행", "short": true},
+                      {"title": "Deployments", "value": "${TOTAL_DEPLOYMENTS}개 가동", "short": true},
+                      {"title": "StatefulSets", "value": "${TOTAL_STATEFULSETS}개 가동", "short": true},
+                      {"title": "제외 항목", "value": "karpenter 네임스페이스, coredns deployment는 유지됨", "short": false},
+                      {"title": "비고", "value": "관리자가 수동으로 서버를 가동했습니다", "short": false}
+                    ]
+                  }
+                ]
+              }
+              EOF
+
+              echo "=== 수동 서버 켜기 완료 ==="

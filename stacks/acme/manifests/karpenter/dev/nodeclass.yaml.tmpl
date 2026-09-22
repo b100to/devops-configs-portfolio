@@ -1,0 +1,41 @@
+apiVersion: karpenter.k8s.aws/v1
+kind: EC2NodeClass
+metadata:
+  name: ${name}
+spec:
+  kubelet:
+    maxPods: 110
+  amiFamily: ${ami_family}
+  blockDeviceMappings:
+    - deviceName: /dev/xvda
+      ebs:
+        deleteOnTermination: true
+        encrypted: true 
+        volumeSize: 80Gi
+        volumeType: gp3
+  role: ${karpenter_role}
+  subnetSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: ${subnet_discovery}
+  securityGroupSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: ${sg_discovery}
+  amiSelectorTerms:
+    - alias: al2023@latest
+  tags:
+    karpenter.sh/discovery: ${subnet_discovery}
+    Name: ${name_tag}
+    Environment: ${environment}
+  metadataOptions:
+    httpEndpoint: enabled
+    httpProtocolIPv6: disabled
+    httpPutResponseHopLimit: 2
+    httpTokens: required
+  userData: |
+    ---
+    apiVersion: node.eks.aws/v1alpha1
+    kind: NodeConfig
+    spec:
+      kubelet:
+        config:
+          maxPods: 110

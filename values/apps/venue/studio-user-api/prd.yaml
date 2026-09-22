@@ -1,0 +1,168 @@
+# =============================================================================
+# Venue Studio User API - Production Environment
+# =============================================================================
+global:
+  env: prd
+  registry:
+    accountId: "222222222222"
+    region: "ap-northeast-2"
+
+# =============================================================================
+# Application
+# =============================================================================
+fullnameOverride: studio-user-api
+
+# Namespace (없으면 자동 생성)
+namespace:
+  name: venue
+
+# =============================================================================
+# Image
+# =============================================================================
+image:
+  repository: venue-partner-user-prod
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# =============================================================================
+# Service Account
+# =============================================================================
+serviceAccount:
+  create: false
+  name: app-venue
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::222222222222:role/eks-pod-identity-app-venue-v2
+
+# =============================================================================
+# Deployment
+# =============================================================================
+replicaCount: 2
+
+priorityClassName: medium-priority
+
+labels:
+  env: prd
+
+# =============================================================================
+# Service
+# =============================================================================
+service:
+  enabled: true
+  type: ClusterIP
+  port: 80
+  targetPort: 8080
+
+# =============================================================================
+# Health Checks
+# =============================================================================
+startupProbe:
+  enabled: true
+  httpGet:
+    path: /user/
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 30
+  timeoutSeconds: 10
+  failureThreshold: 10
+  successThreshold: 1
+
+livenessProbe:
+  enabled: true
+  httpGet:
+    path: /user/
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 30
+  timeoutSeconds: 10
+  failureThreshold: 10
+  successThreshold: 1
+
+readinessProbe:
+  enabled: true
+  httpGet:
+    path: /user/
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 30
+  timeoutSeconds: 10
+  failureThreshold: 10
+  successThreshold: 1
+
+# =============================================================================
+# Resources
+# =============================================================================
+resources:
+  requests:
+    cpu: 17m  # Kubecost 7d avg 9.9m / 0.6
+    memory: 1000Mi
+  limits:
+    memory: 1500Mi
+
+# =============================================================================
+# Autoscaling
+# =============================================================================
+autoscaling:
+  enabled: false
+
+# =============================================================================
+# Environment Variables
+# =============================================================================
+env:
+  # Spring
+  - name: SPRING_PROFILES_ACTIVE
+    value: prod
+  - name: DD_TRACING_ENABLED
+    value: "false"
+  - name: DD_TRACE_ENABLED
+    value: "true"
+
+# =============================================================================
+# AWS
+# =============================================================================
+aws:
+  enabled: true
+  region: ap-northeast-2
+
+envFrom: []
+
+# =============================================================================
+# Datadog
+# =============================================================================
+datadog:
+  enabled: true
+
+
+# =============================================================================
+# Scheduling
+# =============================================================================
+# 노드 분산: zone soft + hostname hard(동일 노드 중복 금지) — 2026-06-02 쏠림 다운 재발 방지
+# nodeTaintsPolicy: Honor — taint 노드를 분산 도메인에서 제외
+defaultTopologySpread:
+  enabled: false
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: ScheduleAnyway
+    nodeTaintsPolicy: Honor
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: studio-user-api
+    matchLabelKeys:
+      - pod-template-hash
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: DoNotSchedule
+    nodeTaintsPolicy: Honor
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: studio-user-api
+    matchLabelKeys:
+      - pod-template-hash
+
+# =============================================================================
+# Pod Disruption Budget
+# =============================================================================
+# descheduler/node drain 등 voluntary eviction 시 최소 1개 replica 보장
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1

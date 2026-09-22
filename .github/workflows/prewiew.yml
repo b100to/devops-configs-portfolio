@@ -1,0 +1,304 @@
+name: Terraform Preview
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  fmt:
+    name: Check formatting
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Terramate
+        uses: terramate-io/terramate-action@v2
+        with:
+          version: "0.14.7"
+
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.13.5
+          terraform_wrapper: false
+
+      - name: Check Terramate formatting
+        run: terramate fmt --check
+
+      - name: Check Terraform formatting
+        run: terraform fmt -recursive -check -diff
+
+  preview-dev:
+    name: Plan (dev)
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+      checks: read
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Configure Git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      # Change base must be resolved BEFORE merging the base branch in.
+      # Terramate's default base (origin/main) breaks when the PR is auto-merged
+      # while this job is still starting: main then already contains the PR's
+      # changes, the sync-merge below makes the diff empty, and every plan step
+      # silently skips. The fork point is immune to that race.
+      - name: Resolve change base
+        id: base
+        run: |
+          BASE_REF="${{ github.base_ref }}"
+          BASE_REF="${BASE_REF:-main}"
+          git fetch origin "$BASE_REF"
+          echo "sha=$(git merge-base "origin/$BASE_REF" HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Sync with base branch
+        run: |
+          BASE_REF="${{ github.base_ref }}"
+          BASE_REF="${BASE_REF:-main}"
+          git merge "origin/$BASE_REF" --no-edit
+
+      - name: Install Terramate
+        uses: terramate-io/terramate-action@v2
+        with:
+          version: "0.14.7"
+
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.13.5
+          terraform_wrapper: false
+
+      - name: List changed stacks
+        id: list
+        run: terramate list --tags=dev --changed -B "${{ steps.base.outputs.sha }}"
+
+      - name: Configure AWS credentials via OIDC
+        if: steps.list.outputs.stdout
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.DEV_AWS_ACCOUNT_ID }}:role/GitHubActions
+          aws-region: ap-northeast-2
+
+      - name: Create AWS named profile for Terraform
+        if: steps.list.outputs.stdout
+        run: |
+          aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID --profile dev
+          aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY --profile dev
+          aws configure set aws_session_token $AWS_SESSION_TOKEN --profile dev
+          aws configure set region ap-northeast-2 --profile dev
+
+      - name: Setup Terraform Plugin Cache
+        run: |
+          mkdir -p ~/.terraform.d/plugin-cache
+          echo 'plugin_cache_dir = "$HOME/.terraform.d/plugin-cache"' > ~/.terraformrc
+
+      - name: Cache Terraform Providers
+        uses: actions/cache@v4
+        with:
+          path: ~/.terraform.d/plugin-cache
+          key: terraform-providers-dev-${{ hashFiles('**/.terraform.lock.hcl') }}
+          restore-keys: |
+            terraform-providers-dev-
+
+      - name: Initialize Terraform (changed + dependency stacks)
+        if: steps.list.outputs.stdout
+        run: |
+          terramate run \
+            --tags=dev \
+            --changed \
+            -B "${{ steps.base.outputs.sha }}" \
+            --include-output-dependencies \
+            --parallel 5 \
+            -- \
+            terraform init -lock-timeout=5m
+
+      - name: Validate Terraform configuration
+        if: steps.list.outputs.stdout
+        run: |
+          terramate run \
+            --tags=dev \
+            --parallel 5 \
+            --changed \
+            -B "${{ steps.base.outputs.sha }}" \
+            -- \
+            terraform validate
+
+      - name: Plan Terraform changes
+        id: plan
+        if: steps.list.outputs.stdout
+        run: |
+          set -o pipefail
+          terramate run \
+            --tags=dev \
+            --parallel 5 \
+            --enable-sharing \
+            --mock-on-fail \
+            --changed \
+            -B "${{ steps.base.outputs.sha }}" \
+            --sync-preview \
+            --terraform-plan-file=out.tfplan \
+            --continue-on-error \
+            -- \
+            terraform plan -out out.tfplan -detailed-exitcode -lock=false -no-color \
+            2>&1 | tee /tmp/plan-dev.txt
+
+      - name: Publish plan to PR
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        env:
+          TM_ENV: dev
+          TM_STACKS: ${{ steps.list.outputs.stdout }}
+        with:
+          script: |
+            const script = require('${{ github.workspace }}/.github/scripts/publish-preview.js')
+            await script({ github, context, core })
+
+  preview-prd:
+    name: Plan (prd)
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: write
+      checks: read
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Configure Git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      # See preview-dev: fork point instead of origin/main, resolved pre-merge.
+      - name: Resolve change base
+        id: base
+        run: |
+          BASE_REF="${{ github.base_ref }}"
+          BASE_REF="${BASE_REF:-main}"
+          git fetch origin "$BASE_REF"
+          echo "sha=$(git merge-base "origin/$BASE_REF" HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Sync with base branch
+        run: |
+          BASE_REF="${{ github.base_ref }}"
+          BASE_REF="${BASE_REF:-main}"
+          git merge "origin/$BASE_REF" --no-edit
+
+      - name: Install Terramate
+        uses: terramate-io/terramate-action@v2
+        with:
+          version: "0.14.7"
+
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.13.5
+          terraform_wrapper: false
+
+      - name: List changed stacks
+        id: list
+        run: terramate list --tags=prd --changed -B "${{ steps.base.outputs.sha }}"
+
+      - name: Configure AWS credentials via OIDC
+        if: steps.list.outputs.stdout
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.PRD_AWS_ACCOUNT_ID }}:role/GitHubActions
+          aws-region: ap-northeast-2
+
+      - name: Create AWS named profile for Terraform
+        if: steps.list.outputs.stdout
+        run: |
+          aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID --profile prd
+          aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY --profile prd
+          aws configure set aws_session_token $AWS_SESSION_TOKEN --profile prd
+          aws configure set region ap-northeast-2 --profile prd
+
+      - name: Setup Terraform Plugin Cache
+        run: |
+          mkdir -p ~/.terraform.d/plugin-cache
+          echo 'plugin_cache_dir = "$HOME/.terraform.d/plugin-cache"' > ~/.terraformrc
+
+      - name: Cache Terraform Providers
+        uses: actions/cache@v4
+        with:
+          path: ~/.terraform.d/plugin-cache
+          key: terraform-providers-prd-${{ hashFiles('**/.terraform.lock.hcl') }}
+          restore-keys: |
+            terraform-providers-prd-
+
+      - name: Initialize Terraform (changed + dependency stacks)
+        if: steps.list.outputs.stdout
+        run: |
+          terramate run \
+            --tags=prd \
+            --changed \
+            -B "${{ steps.base.outputs.sha }}" \
+            --include-output-dependencies \
+            --parallel 5 \
+            -- \
+            terraform init -lock-timeout=5m
+
+      - name: Validate Terraform configuration
+        if: steps.list.outputs.stdout
+        run: |
+          terramate run \
+            --tags=prd \
+            --parallel 5 \
+            --changed \
+            -B "${{ steps.base.outputs.sha }}" \
+            -- \
+            terraform validate
+
+      - name: Plan Terraform changes
+        id: plan
+        if: steps.list.outputs.stdout
+        run: |
+          set -o pipefail
+          terramate run \
+            --tags=prd \
+            --parallel 5 \
+            --enable-sharing \
+            --mock-on-fail \
+            --changed \
+            -B "${{ steps.base.outputs.sha }}" \
+            --sync-preview \
+            --terraform-plan-file=out.tfplan \
+            --continue-on-error \
+            -- \
+            terraform plan -out out.tfplan -detailed-exitcode -lock=false -no-color \
+            2>&1 | tee /tmp/plan-prd.txt
+
+      - name: Publish plan to PR
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        env:
+          TM_ENV: prd
+          TM_STACKS: ${{ steps.list.outputs.stdout }}
+        with:
+          script: |
+            const script = require('${{ github.workspace }}/.github/scripts/publish-preview.js')
+            await script({ github, context, core })

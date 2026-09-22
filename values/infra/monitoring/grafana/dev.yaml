@@ -1,0 +1,140 @@
+resources:
+  requests:
+    memory: 60Mi # Kubecost 7d avg 42Mi / 0.7
+    cpu: 10m # Kubecost 7d avg 3m / 0.7 (min 10m)
+  limits:
+    memory: 512Mi
+    cpu: 200m
+
+persistence:
+  enabled: false
+
+# Admin credentials from AWS Secrets Manager via External Secrets
+admin:
+  existingSecret: grafana-admin
+  userKey: admin-user
+  passwordKey: admin-password
+
+envFromSecret: grafana-admin
+env:
+  GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_PATH: "contains(email, '@acme-corp.example') && 'Admin' || 'Viewer'"
+  GF_AUTH_GENERIC_OAUTH_ROLE_ATTRIBUTE_STRICT: "false"
+  GF_AUTH_GENERIC_OAUTH_ALLOW_ASSIGN_GRAFANA_ADMIN: "true"
+envValueFrom:
+  GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET:
+    secretKeyRef:
+      name: grafana-admin
+      key: GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET
+
+grafana.ini:
+  server:
+    domain: grafana.dev.acme.example
+    root_url: https://grafana.dev.acme.example
+  auth:
+    oauth_auto_login: true
+  auth.generic_oauth:
+    enabled: true
+    name: Authentik
+    allow_sign_up: true
+    client_id: grafana
+    client_secret: $__env{GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET}
+    scopes: openid profile email
+    auth_url: https://sso.acme.example/application/o/authorize/
+    token_url: https://sso.acme.example/application/o/token/
+    api_url: https://sso.acme.example/application/o/userinfo/
+
+datasources:
+  datasources.yaml:
+    apiVersion: 1
+    datasources:
+      # Loki 설정
+      - name: Loki
+        type: loki
+        url: http://loki:3100
+        access: proxy
+
+      # Prometheus 설정 (kube-prometheus-stack)
+      # - kube-prometheus-stack release name 기준 Service 이름:
+      #   `kube-prometheus-stack-prometheus.monitoring.svc:9090`
+      # - 같은 namespace(monitoring)이라 short name으로도 충분
+      - name: Prometheus
+        type: prometheus
+        uid: prometheus
+        url: http://kube-prometheus-stack-prometheus:9090
+        access: proxy
+        isDefault: true
+        jsonData:
+          timeInterval: "30s"
+          queryTimeout: "60s"
+          httpMethod: "POST"
+
+      # Alertmanager (kube-prometheus-stack)
+      - name: Alertmanager
+        type: alertmanager
+        uid: alertmanager
+        url: http://kube-prometheus-stack-alertmanager:9093
+        access: proxy
+        jsonData:
+          implementation: prometheus
+          handleGrafanaManagedAlerts: false
+
+dashboardProviders:
+  dashboardproviders.yaml:
+    apiVersion: 1
+    providers:
+      - name: "default"
+        orgId: 1
+        folder: ""
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards/default
+
+dashboards:
+  default:
+    # ========== Kubernetes 메트릭 대시보드 ==========
+    kubernetes-overview:
+      gnetId: 315
+      revision: 3
+      datasource: Prometheus
+
+    node-exporter:
+      gnetId: 1860
+      revision: 37
+      datasource: Prometheus
+
+    kubernetes-cluster-monitoring:
+      gnetId: 7249
+      revision: 1
+      datasource: Prometheus
+
+    kubernetes-pods:
+      gnetId: 6417
+      revision: 1
+      datasource: Prometheus
+
+    # ========== Loki 로그 대시보드 ==========
+    # Loki 로그 개요 - namespace/app별 로그 볼륨, 에러율
+    loki-logs-overview:
+      gnetId: 15141
+      revision: 1
+      datasource: Loki
+
+    # Loki Quick Search - 빠른 로그 검색용
+    loki-quick-search:
+      gnetId: 12611
+      revision: 5
+      datasource: Loki
+
+    # Kubernetes 로그 - namespace/pod/container별 로그 뷰어
+    loki-kubernetes-logs:
+      gnetId: 15141
+      revision: 1
+      datasource: Loki
+
+sidecar:
+  dashboards:
+    enabled: true
+    label: grafana_dashboard
+    labelValue: "1"

@@ -1,0 +1,139 @@
+# =============================================================================
+# Venue Services Routes - Development
+# beacon.dev, member.dev, play.dev, partner-admin.dev, venue-partner.dev, venue-admin.dev
+# =============================================================================
+
+---
+# 단일 호스트 라우트들
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: venue-standalone
+  namespace: venue
+  labels:
+    environment: dev
+spec:
+  entryPoints:
+    - web
+  routes:
+    # beacon.dev.acme.example -> beacon-api
+    - match: Host(`beacon.dev.acme.example`)
+      kind: Rule
+      middlewares:
+        - name: cors-headers
+          namespace: traefik
+      services:
+        - name: beacon-api
+          port: 80
+
+    # member.dev.acme.example -> member-api
+    - match: Host(`member.dev.acme.example`)
+      kind: Rule
+      middlewares:
+        - name: cors-headers
+          namespace: traefik
+      services:
+        - name: member-api
+          port: 80
+
+    # play.dev.acme.example -> play-api
+    - match: Host(`play.dev.acme.example`)
+      kind: Rule
+      # middlewares:
+      #   - name: cors-headers
+      #     namespace: traefik
+      services:
+        - name: play-api
+          port: 80
+
+    # partner-admin.dev.acme.example -> studio-admin-django (Legacy)
+    - match: Host(`partner-admin.dev.acme.example`)
+      kind: Rule
+      middlewares:
+        - name: cors-headers
+          namespace: traefik
+      services:
+        - name: studio-admin-django
+          port: 80
+
+---
+# venue-partner.dev.acme.example (Multiple backends)
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: venue-partner
+  namespace: venue
+  labels:
+    environment: dev
+spec:
+  entryPoints:
+    - web
+  routes:
+    # /admin -> studio-admin-booking
+    - match: Host(`venue-partner.dev.acme.example`) && PathPrefix(`/admin`)
+      kind: Rule
+      middlewares:
+        - name: cors-headers
+          namespace: traefik
+      services:
+        - name: studio-admin-booking
+          port: 80
+      priority: 30
+
+    # /partner -> studio-admin-partner
+    - match: Host(`venue-partner.dev.acme.example`) && PathPrefix(`/partner`)
+      kind: Rule
+      middlewares:
+        - name: cors-headers
+          namespace: traefik
+      services:
+        - name: studio-admin-partner
+          port: 80
+      priority: 30
+
+    # /user -> studio-user-api
+    - match: Host(`venue-partner.dev.acme.example`) && PathPrefix(`/user`)
+      kind: Rule
+      # middlewares:
+      #   - name: cors-headers
+      #     namespace: traefik
+      services:
+        - name: studio-user-api
+          port: 80
+      priority: 30
+
+---
+# venue-admin.dev.acme.example
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: venue-admin
+  namespace: venue
+  labels:
+    environment: dev
+spec:
+  entryPoints:
+    - web
+  routes:
+    # /acme -> studio-admin-acme (cutover #222, #226 → rollback: byte 호환 확인 후 안전상 원본 복귀.
+    # services 의 studioacme 모듈 + replace-acme-prefix middleware 완비. 다음 cutover 시 routes 만 services 로.)
+    - match: Host(`venue-admin.dev.acme.example`) && PathPrefix(`/acme`)
+      kind: Rule
+      middlewares:
+        - name: cors-headers
+          namespace: traefik
+      services:
+        - name: studio-admin-acme
+          port: 80
+      priority: 20
+
+    # /partner -> studio-admin-partner
+    - match: Host(`venue-admin.dev.acme.example`) && PathPrefix(`/partner`)
+      kind: Rule
+      middlewares:
+        - name: cors-headers
+          namespace: traefik
+      services:
+        - name: studio-admin-partner
+          port: 80
+      priority: 20

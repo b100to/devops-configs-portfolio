@@ -1,0 +1,67 @@
+# Mall Redis Proxy
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mall-redis-proxy
+  namespace: default
+  labels:
+    app: mall-redis-proxy
+    service: mall
+    component: redis-proxy
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mall-redis-proxy
+  template:
+    metadata:
+      labels:
+        app: mall-redis-proxy
+        service: mall
+        component: redis-proxy
+    spec:
+      containers:
+        - name: redis-proxy
+          image: alpine/socat
+          command:
+            - socat
+            - TCP-LISTEN:6379,fork,reuseaddr
+            - TCP:acmemall-prod-cache.abcdef.ng.0001.apn2.cache.amazonaws.com:6379
+          ports:
+            - containerPort: 6379
+              name: redis
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+          securityContext:
+            runAsUser: 0
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+              add:
+                - NET_BIND_SERVICE
+
+---
+# Mall Redis Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: mall-redis-service
+  namespace: default
+  labels:
+    app: mall-redis-proxy
+    service: mall
+spec:
+  selector:
+    app: mall-redis-proxy
+  ports:
+    - name: redis
+      port: 6379
+      targetPort: 6379
+      protocol: TCP
+  type: ClusterIP

@@ -1,0 +1,32 @@
+# RemovePodsViolatingTopologySpreadConstraint 만 활성화 — 노드 장애 복구 후 쏠린 pod을
+# hostname hard 제약 위반 기준으로 재분산. LowNodeUtilization 등 광범위한 전략은
+# 이번 1차 배포 범위 밖 (추후 검증 후 별도 롤아웃).
+#
+# eviction은 항상 K8s Eviction API를 통해 이뤄지며 PodDisruptionBudget을 기본 존중하므로,
+# PDB가 설정된 서비스에도 안전하게 동작 — descheduler 설정에 별도 min-replica 플래그 불필요.
+kind: CronJob
+schedule: "*/10 * * * *" # 10분 간격 — 1차 배포는 보수적으로, chart 기본값(2분)보다 완화
+
+deschedulerPolicyAPIVersion: "descheduler/v1alpha2"
+deschedulerPolicy:
+  profiles:
+    - name: topology-spread-rebalance
+      pluginConfig:
+        - name: DefaultEvictor
+          args:
+            podProtections:
+              defaultDisabled:
+                - "PodsWithLocalStorage"
+        - name: RemovePodsViolatingTopologySpreadConstraint
+          args:
+            constraints:
+              - DoNotSchedule
+            namespaces:
+              include:
+                - mall
+                - venue
+                - default
+      plugins:
+        balance:
+          enabled:
+            - RemovePodsViolatingTopologySpreadConstraint

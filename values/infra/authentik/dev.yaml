@@ -1,0 +1,35 @@
+authentik:
+  secret_key: "REPLACE_ME_AUTHENTIK_SECRET_KEY"
+  error_reporting:
+    enabled: true
+  postgresql:
+    password: "REPLACE_ME"
+
+# Ingress 설정 (Traefik 사용)
+server:
+  ingress:
+    enabled: false # Traefik IngressRoute 별도 사용
+  resources:
+    requests:
+      memory: 512Mi
+      cpu: 250m
+    limits:
+      memory: 1Gi
+      cpu: 500m
+
+worker:
+  resources:
+    requests:
+      memory: 512Mi
+      cpu: 250m
+    limits:
+      memory: 1Gi
+      cpu: 500m
+
+postgresql:
+  enabled: true
+  auth:
+    password: "REPLACE_ME"
+
+redis:
+  enabled: true

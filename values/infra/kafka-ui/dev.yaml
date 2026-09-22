@@ -1,0 +1,24 @@
+yamlApplicationConfig:
+  kafka:
+    clusters:
+      - name: "Acme Main Dev"
+        bootstrapServers: "kafka-controller-headless:9092"
+        schemaRegistry: "http://schema-registry:8081"
+resources:
+  requests:
+    memory: "96Mi" # Kubecost 7d avg 67Mi / 0.7
+    cpu: "10m" # Kubecost 7d avg 4m / 0.7 (min 10m)
+  limits:
+    memory: "512Mi"
+    cpu: "200m"
+
+# 앱 시작에 ~90초 소요되므로 probe 대기시간 확보
+probes:
+  liveness:
+    initialDelaySeconds: 120  # 앱 시작 대기
+    periodSeconds: 30
+    timeoutSeconds: 10
+  readiness:
+    initialDelaySeconds: 120
+    periodSeconds: 30
+    timeoutSeconds: 10

@@ -1,0 +1,83 @@
+controller:
+  replicaCount: 2
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: topology.kubernetes.io/zone
+      whenUnsatisfiable: DoNotSchedule
+      labelSelector:
+        matchLabels:
+          app: ebs-csi-controller
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: DoNotSchedule
+      minDomains: 2
+      labelSelector:
+        matchLabels:
+          app: ebs-csi-controller
+  serviceAccount:
+    name: ebs-csi-controller-sa
+    annotations:
+      eks.amazonaws.com/role-arn: arn:aws:iam::222222222222:role/eks-pod-identity-ebs-csi-controller-sa-v2
+node:
+  serviceAccount:
+    name: ebs-csi-node-sa
+    annotations:
+      eks.amazonaws.com/role-arn: arn:aws:iam::222222222222:role/eks-pod-identity-ebs-csi-controller-sa-v2
+storageClasses:
+  - name: gp3
+    annotations:
+      storageclass.kubernetes.io/is-default-class: "true"
+    volumeBindingMode: WaitForFirstConsumer
+    reclaimPolicy: Delete
+    parameters:
+      fsType: ext4
+      type: gp3
+sidecars:
+  provisioner:
+    resources:
+      requests:
+        cpu: 10m
+        memory: 25Mi
+      limits:
+        cpu: 20m
+        memory: 35Mi
+  attacher:
+    resources:
+      requests:
+        cpu: 10m
+        memory: 25Mi
+      limits:
+        cpu: 20m
+        memory: 35Mi
+  snapshotter:
+    resources:
+      requests:
+        cpu: 10m
+        memory: 25Mi
+      limits:
+        cpu: 20m
+        memory: 35Mi
+  livenessProbe:
+    resources:
+      requests:
+        cpu: 10m
+        memory: 20Mi
+      limits:
+        cpu: 15m
+        memory: 25Mi
+  resizer:
+    resources:
+      requests:
+        cpu: 10m
+        memory: 25Mi
+      limits:
+        cpu: 20m
+        memory: 35Mi
+  nodeDriverRegistrar:
+    resources:
+      requests:
+        cpu: 10m
+        memory: 20Mi
+      limits:
+        cpu: 15m
+        memory: 25Mi

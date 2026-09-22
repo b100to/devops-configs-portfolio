@@ -1,0 +1,280 @@
+name: Terraform Deployment
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy-dev:
+    name: Deploy (dev)
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: read
+      checks: read
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Install Terramate
+        uses: terramate-io/terramate-action@v2
+        with:
+          version: "0.14.7"
+
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.13.5
+          terraform_wrapper: false
+
+      - name: List changed stacks
+        id: list
+        run: terramate list --tags=dev --changed
+
+      - name: Configure AWS credentials via OIDC
+        if: steps.list.outputs.stdout
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.DEV_AWS_ACCOUNT_ID }}:role/GitHubActions
+          aws-region: ap-northeast-2
+
+      - name: Create AWS named profile for Terraform
+        if: steps.list.outputs.stdout
+        run: |
+          aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID --profile dev
+          aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY --profile dev
+          aws configure set aws_session_token $AWS_SESSION_TOKEN --profile dev
+          aws configure set region ap-northeast-2 --profile dev
+
+      - name: Setup Terraform Plugin Cache
+        run: |
+          mkdir -p ~/.terraform.d/plugin-cache
+          echo 'plugin_cache_dir = "$HOME/.terraform.d/plugin-cache"' > ~/.terraformrc
+
+      - name: Cache Terraform Providers
+        uses: actions/cache@v4
+        with:
+          path: ~/.terraform.d/plugin-cache
+          key: terraform-providers-dev-${{ hashFiles('**/.terraform.lock.hcl') }}
+          restore-keys: |
+            terraform-providers-dev-
+
+      - name: Initialize dependency stacks for output sharing
+        if: steps.list.outputs.stdout
+        env:
+          TF_PLUGIN_CACHE_MAY_BREAK_DEPENDENCY_LOCK_FILE: "true"
+        run: |
+          CHANGED=$(terramate list --tags=dev --changed)
+          DEP_IDS=$(echo "$CHANGED" | while read -r stack; do
+            grep 'from_stack_id' "${stack}/stack.tm.hcl" 2>/dev/null | grep -oE '"[a-zA-Z0-9_]+"' | tr -d '"'
+          done | sort -u)
+          for dep_id in $DEP_IDS; do
+            dep_path=$(grep -rl "^[[:space:]]*id[[:space:]]*=.*\"${dep_id}\"" . --include="stack.tm.hcl" | head -1 | xargs dirname 2>/dev/null)
+            if [ -n "$dep_path" ] && ! echo "$CHANGED" | grep -qF "$dep_path"; then
+              echo "Initializing dependency: $dep_path"
+              terraform -chdir="$dep_path" init -lock-timeout=5m
+            fi
+          done
+
+      - name: Initialize Terraform in changed stacks
+        if: steps.list.outputs.stdout
+        env:
+          TF_PLUGIN_CACHE_MAY_BREAK_DEPENDENCY_LOCK_FILE: "true"
+        run: |
+          terramate run \
+            --tags=dev \
+            --changed \
+            --parallel 1 \
+            --enable-sharing \
+            --mock-on-fail \
+            -- \
+            terraform init -lock-timeout=5m
+
+      - name: Plan Terraform changes
+        if: steps.list.outputs.stdout
+        id: plan
+        run: |
+          terramate run \
+            --tags=dev \
+            --parallel 5 \
+            --enable-sharing \
+            --mock-on-fail \
+            --changed \
+            --sync-deployment \
+            --terraform-plan-file=out.tfplan \
+            -- \
+            terraform plan -out out.tfplan -lock-timeout=5m
+
+      - name: Apply Terraform changes
+        if: steps.list.outputs.stdout
+        id: apply
+        run: |
+          terramate run \
+            --tags=dev \
+            --parallel 1 \
+            --enable-sharing \
+            --mock-on-fail \
+            --changed \
+            --sync-deployment \
+            -- \
+            terraform apply -input=false -auto-approve -lock-timeout=5m
+
+      - name: Run drift detection after deployment
+        if: steps.list.outputs.stdout && !cancelled() && steps.apply.outcome != 'skipped'
+        run: |
+          terramate run \
+            --tags=dev \
+            --parallel 5 \
+            --enable-sharing \
+            --mock-on-fail \
+            --changed \
+            --continue-on-error \
+            --sync-drift-status \
+            --terraform-plan-file=drift.tfplan \
+            -- \
+            terraform plan -out drift.tfplan -detailed-exitcode -lock=false
+
+  deploy-prd:
+    name: Deploy (prd)
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: read
+      checks: read
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+
+      - name: Install Terramate
+        uses: terramate-io/terramate-action@v2
+        with:
+          version: "0.14.7"
+
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.13.5
+          terraform_wrapper: false
+
+      - name: List changed stacks
+        id: list
+        run: terramate list --tags=prd --changed
+
+      - name: Configure AWS credentials via OIDC
+        if: steps.list.outputs.stdout
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.PRD_AWS_ACCOUNT_ID }}:role/GitHubActions
+          aws-region: ap-northeast-2
+
+      - name: Create AWS named profile for Terraform
+        if: steps.list.outputs.stdout
+        run: |
+          aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID --profile prd
+          aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY --profile prd
+          aws configure set aws_session_token $AWS_SESSION_TOKEN --profile prd
+          aws configure set region ap-northeast-2 --profile prd
+
+      - name: Setup Terraform Plugin Cache
+        run: |
+          mkdir -p ~/.terraform.d/plugin-cache
+          echo 'plugin_cache_dir = "$HOME/.terraform.d/plugin-cache"' > ~/.terraformrc
+
+      - name: Cache Terraform Providers
+        uses: actions/cache@v4
+        with:
+          path: ~/.terraform.d/plugin-cache
+          key: terraform-providers-prd-${{ hashFiles('**/.terraform.lock.hcl') }}
+          restore-keys: |
+            terraform-providers-prd-
+
+      - name: Initialize dependency stacks for output sharing
+        if: steps.list.outputs.stdout
+        env:
+          TF_PLUGIN_CACHE_MAY_BREAK_DEPENDENCY_LOCK_FILE: "true"
+        run: |
+          CHANGED=$(terramate list --tags=prd --changed)
+          DEP_IDS=$(echo "$CHANGED" | while read -r stack; do
+            grep 'from_stack_id' "${stack}/stack.tm.hcl" 2>/dev/null | grep -oE '"[a-zA-Z0-9_]+"' | tr -d '"'
+          done | sort -u)
+          for dep_id in $DEP_IDS; do
+            dep_path=$(grep -rl "^[[:space:]]*id[[:space:]]*=.*\"${dep_id}\"" . --include="stack.tm.hcl" | head -1 | xargs dirname 2>/dev/null)
+            if [ -n "$dep_path" ] && ! echo "$CHANGED" | grep -qF "$dep_path"; then
+              echo "Initializing dependency: $dep_path"
+              terraform -chdir="$dep_path" init -lock-timeout=5m
+            fi
+          done
+
+      - name: Initialize Terraform in changed stacks
+        if: steps.list.outputs.stdout
+        env:
+          TF_PLUGIN_CACHE_MAY_BREAK_DEPENDENCY_LOCK_FILE: "true"
+        run: |
+          terramate run \
+            --tags=prd \
+            --changed \
+            --parallel 1 \
+            --enable-sharing \
+            --mock-on-fail \
+            -- \
+            terraform init -lock-timeout=5m
+
+      - name: Plan Terraform changes
+        if: steps.list.outputs.stdout
+        id: plan
+        run: |
+          terramate run \
+            --tags=prd \
+            --parallel 5 \
+            --enable-sharing \
+            --mock-on-fail \
+            --changed \
+            --sync-deployment \
+            --terraform-plan-file=out.tfplan \
+            -- \
+            terraform plan -out out.tfplan -lock-timeout=5m
+
+      - name: Apply Terraform changes
+        if: steps.list.outputs.stdout
+        id: apply
+        run: |
+          terramate run \
+            --tags=prd \
+            --parallel 1 \
+            --enable-sharing \
+            --mock-on-fail \
+            --changed \
+            --sync-deployment \
+            -- \
+            terraform apply -input=false -auto-approve -lock-timeout=5m
+
+      - name: Run drift detection after deployment
+        if: steps.list.outputs.stdout && !cancelled() && steps.apply.outcome != 'skipped'
+        run: |
+          terramate run \
+            --tags=prd \
+            --parallel 5 \
+            --enable-sharing \
+            --mock-on-fail \
+            --changed \
+            --continue-on-error \
+            --sync-drift-status \
+            --terraform-plan-file=drift.tfplan \
+            -- \
+            terraform plan -out drift.tfplan -detailed-exitcode -lock=false

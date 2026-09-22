@@ -1,0 +1,49 @@
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: aws-credentials
+  namespace: monitoring
+spec:
+  refreshInterval: "15m"
+  secretStoreRef:
+    name: aws-secrets-store
+    kind: ClusterSecretStore
+  target:
+    name: aws-account
+    creationPolicy: Owner
+  data:
+    - secretKey: AWS_ACCESS_KEY_ID
+      remoteRef:
+        key: eks/acme-main-v2-prd
+        property: AWS_ACCESS_KEY_ID
+    - secretKey: AWS_SECRET_ACCESS_KEY
+      remoteRef:
+        key: eks/acme-main-v2-prd
+        property: AWS_SECRET_ACCESS_KEY
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: grafana-admin
+  namespace: monitoring
+spec:
+  refreshInterval: "15m"
+  secretStoreRef:
+    name: aws-secrets-store
+    kind: ClusterSecretStore
+  target:
+    name: grafana-admin
+    creationPolicy: Owner
+  data:
+    - secretKey: admin-user
+      remoteRef:
+        key: eks/acme-main-v2-prd
+        property: GRAFANA_ADMIN_USER
+    - secretKey: admin-password
+      remoteRef:
+        key: eks/acme-main-v2-prd
+        property: GRAFANA_ADMIN_PASSWORD
+    - secretKey: GF_AUTH_GENERIC_OAUTH_CLIENT_SECRET
+      remoteRef:
+        key: eks/acme-main-v2-prd
+        property: argocd_oidc_authentik_client_secret

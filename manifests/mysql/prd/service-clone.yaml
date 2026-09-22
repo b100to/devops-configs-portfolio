@@ -1,0 +1,76 @@
+# Service Clone MySQL Proxy
+# 매일 생성되는 service 클론 DB(service-prod-clone-YYYY-MM-DD)용 프록시.
+# 타겟은 클론 생성 스크립트가 매일 갱신하는 stable 별칭이라 날짜 회전을 자동 흡수한다
+# (socat fork 모드 → 연결마다 DNS 재해석).
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: service-clone-mysql-proxy
+  namespace: default
+  labels:
+    app: service-clone-mysql-proxy
+    service: service-clone
+    component: mysql-proxy
+spec:
+  serviceName: service-clone-mysql-service
+  replicas: 1
+  selector:
+    matchLabels:
+      app: service-clone-mysql-proxy
+  template:
+    metadata:
+      labels:
+        app: service-clone-mysql-proxy
+        service: service-clone
+        component: mysql-proxy
+    spec:
+      containers:
+        - name: mysql-proxy
+          image: alpine/socat
+          command:
+            - socat
+            - TCP-LISTEN:3306,fork,reuseaddr
+            - TCP:service-clone-db.acme.example:3306
+          ports:
+            - containerPort: 3306
+              name: mysql
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+          securityContext:
+            runAsUser: 0
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+              add:
+                - NET_BIND_SERVICE
+      tolerations:
+        - key: "node-group-type"
+          operator: "Equal"
+          value: "base"
+          effect: "NoSchedule"
+
+---
+# Service Clone MySQL Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: service-clone-mysql-service
+  namespace: default
+  labels:
+    app: service-clone-mysql-proxy
+    service: service-clone
+spec:
+  selector:
+    app: service-clone-mysql-proxy
+  ports:
+    - name: mysql
+      port: 3306
+      targetPort: 3306
+      protocol: TCP
+  type: ClusterIP

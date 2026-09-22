@@ -1,0 +1,156 @@
+# =============================================================================
+# Services (Kotlin Spring Boot 3.5 Monolith) - Development Environment
+# =============================================================================
+global:
+  env: dev
+  registry:
+    accountId: "111111111111"
+    region: "ap-northeast-2"
+
+# =============================================================================
+# Application
+# =============================================================================
+fullnameOverride: services
+
+# Namespace (없으면 자동 생성)
+namespace:
+  name: services
+
+# =============================================================================
+# Image
+# =============================================================================
+image:
+  repository: services
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# =============================================================================
+# Service Account
+# =============================================================================
+serviceAccount:
+  create: true
+  name: app-services
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::111111111111:role/eks-pod-identity-app-services-v2
+
+# =============================================================================
+# Deployment
+# =============================================================================
+replicaCount: 0 # 2026-08-03: beacon 컷오버 롤백, services 스케일다운
+
+priorityClassName: medium-high-priority
+
+labels:
+  env: dev
+  app: services
+
+# =============================================================================
+# Service
+# =============================================================================
+service:
+  enabled: true
+  type: ClusterIP
+  port: 80
+  targetPort: 8080
+
+# =============================================================================
+# Health Checks
+# JVM(Spring Boot) 콜드스타트 15~30초 → initialDelay/failureThreshold 상향
+# =============================================================================
+startupProbe:
+  enabled: true
+  httpGet:
+    # Spring Boot Actuator: JVM 기동만 점검 (DB/Kafka 의존성 제외).
+    # 콜드스타트 중 DB 가 느려도 startup 이 흔들리지 않도록 liveness 와 동일 경로 사용.
+    path: /actuator/health/liveness
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 20
+  successThreshold: 1
+
+livenessProbe:
+  enabled: true
+  httpGet:
+    # K8s liveness: JVM 이 살아 있는지만 본다. 일시적 DB 단절로 pod 재시작 루프 방지.
+    path: /actuator/health/liveness
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 20
+  successThreshold: 1
+
+readinessProbe:
+  enabled: true
+  httpGet:
+    # K8s readiness: DataSource/Kafka 등 의존성 포함 점검. DOWN 시 503 → Service 가 트래픽 끊음.
+    path: /actuator/health/readiness
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 20
+  successThreshold: 1
+
+# =============================================================================
+# Resources
+# Kotlin Spring Boot 3.5 baseline (JVM heap은 Dockerfile의 -XX:MaxRAMPercentage=70.0 으로 조정)
+# =============================================================================
+resources:
+  requests:
+    cpu: 100m
+    memory: 768Mi
+  limits:
+    memory: 1536Mi
+
+# =============================================================================
+# Autoscaling
+# =============================================================================
+autoscaling:
+  enabled: false
+
+# =============================================================================
+# Environment Variables
+# Spring Boot가 application-dev.yml 프로파일을 활성화하도록 지정
+# =============================================================================
+env:
+  - name: SPRING_PROFILES_ACTIVE
+    value: dev
+  # Kafka — member 모듈의 producer/consumer 가 사용 (member-api 원본 application-dev.yml 동일).
+  # KafkaPetProducerConfig / KafkaPetConsumerConfig 가 이 env 값을 읽음.
+  - name: SPRING_KAFKA_PRODUCER_BOOTSTRAP_SERVERS
+    value: kafka.kafka.svc.cluster.local:9092
+  - name: SPRING_KAFKA_CONSUMER_BOOTSTRAP_SERVERS
+    value: kafka.kafka.svc.cluster.local:9092
+  # dev 클러스터에는 Schema Registry 가 없음 → Avro producer/consumer 는 빈 등록 안 함 (@ConditionalOnProperty).
+  # JSON 직렬화 producer/consumer 만 동작.
+  # - name: SPRING_KAFKA_PROPERTIES_SCHEMA_REGISTRY_URL
+  #   value: http://...:8081
+  # - name: SPRING_KAFKA_PROPERTIES_SCHEMA_AUTO_REGISTER_SCHEMAS
+  #   value: "true"
+
+envFrom: []
+
+# =============================================================================
+# AWS
+# =============================================================================
+aws:
+  enabled: true
+  region: ap-northeast-2
+
+# =============================================================================
+# Datadog (dev 미사용)
+# =============================================================================
+datadog:
+  enabled: false
+
+# =============================================================================
+# Scheduling
+# dev 단일 replica이므로 topologySpread 비활성화
+# =============================================================================
+defaultTopologySpread:
+  enabled: false
+
+topologySpreadConstraints: []

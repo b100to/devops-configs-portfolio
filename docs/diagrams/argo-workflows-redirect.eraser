@@ -1,0 +1,22 @@
+title Argo Workflows SSO Auto-Redirect Pattern
+
+User [icon: user, color: grey]
+Browser [icon: chrome, label: "Browser", color: blue]
+Traefik [icon: server, label: "Traefik Ingress", color: blue]
+Authentik [icon: lock, label: "Authentik IdP", color: purple]
+ArgoWorkflows [icon: argo, label: "Argo Workflows", color: green]
+
+// 1. First visit — no cookie
+User -> Browser: GET workflows.company.com/
+Browser -> Traefik: Request (no authorization cookie)
+Traefik -> Browser: 302 Redirect /oauth2/redirect?redirect=/\n(priority 15, Path('/') matched)
+Browser -> Authentik: OIDC Authorization Request
+Authentik -> Browser: Google Login Page
+User -> Browser: Google Login
+Browser -> Authentik: Auth Code
+Authentik -> Browser: Set-Cookie: authorization=token (HttpOnly)\n302 Redirect /
+
+// 2. Second request — cookie exists, no redirect loop
+Browser -> Traefik: GET / (with authorization cookie)
+Traefik -> ArgoWorkflows: Proxy request\n(priority 20, HeaderRegexp matched)
+ArgoWorkflows -> Browser: 200 OK — Dashboard

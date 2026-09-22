@@ -1,0 +1,201 @@
+# =============================================================================
+# Traefik Middlewares - Development
+# =============================================================================
+
+---
+# -----------------------------------------------------------------------------
+# CORS Headers
+# -----------------------------------------------------------------------------
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: cors-headers
+  namespace: traefik
+spec:
+  headers:
+    accessControlAllowMethods:
+      - GET
+      - POST
+      - PUT
+      - DELETE
+      - PATCH
+      - OPTIONS
+    accessControlAllowOriginListRegex:
+      # *.dev.acme.example (모든 dev 서브도메인)
+      - "https://[a-z0-9-]+\\.dev\\.acme\\.kr"
+      # dev.acme-corp.example
+      - "https://dev\\.acme\\.co\\.kr"
+      # *.dev.acmemall.example (모든 acmemall dev 서브도메인)
+      - "https://[a-z0-9-]+\\.dev\\.acmemall\\.com"
+      - "https://dev\\.acmemall\\.com"
+      # *.dev.smartcoverins.co.kr
+      - "https://[a-z0-9-]+\\.dev\\.smartcoverins\\.co\\.kr"
+      - "https://dev\\.smartcoverins\\.co\\.kr"
+      # Vercel deployments (모든 vercel.app 서브도메인)
+      - "https://[a-z0-9-]+\\.vercel\\.app"
+      # Localhost for development
+      - "https?://localhost(:\\d+)?"
+    accessControlAllowHeaders:
+      - "*"
+      - Authorization
+    accessControlAllowCredentials: true
+    accessControlMaxAge: 86400
+    addVaryHeader: true
+
+---
+# -----------------------------------------------------------------------------
+# IP Allowlist (회사 IP만 허용)
+# -----------------------------------------------------------------------------
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: company-ip-allowlist
+  namespace: traefik
+spec:
+  ipAllowList:
+    sourceRange:
+      - "203.0.113.10/32"    # 회사 IP
+      # GitHub Webhook IPs (https://api.github.com/meta)
+      - "192.30.252.0/22"
+      - "185.199.108.0/22"
+      - "140.82.112.0/20"
+      - "143.55.64.0/20"
+    ipStrategy:
+      depth: 1
+
+---
+# -----------------------------------------------------------------------------
+# Rate Limiting
+# -----------------------------------------------------------------------------
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: rate-limit
+  namespace: traefik
+spec:
+  rateLimit:
+    average: 100
+    period: 1s
+    burst: 50
+
+---
+# -----------------------------------------------------------------------------
+# Retry
+# -----------------------------------------------------------------------------
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: retry
+  namespace: traefik
+spec:
+  retry:
+    attempts: 3
+    initialInterval: 100ms
+
+---
+# -----------------------------------------------------------------------------
+# Compress
+# -----------------------------------------------------------------------------
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: compress
+  namespace: traefik
+spec:
+  compress: {}
+
+---
+# -----------------------------------------------------------------------------
+# StripPrefix - Mall namespace
+# -----------------------------------------------------------------------------
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: strip-seller-prefix
+  namespace: mall
+spec:
+  stripPrefix:
+    prefixes:
+      - /seller
+
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: strip-admin-prefix
+  namespace: mall
+spec:
+  stripPrefix:
+    prefixes:
+      - /admin
+
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: strip-mall-prefix
+  namespace: mall
+spec:
+  stripPrefix:
+    prefixes:
+      - /mall
+
+---
+# -----------------------------------------------------------------------------
+# StripPrefix - Venue namespace
+# -----------------------------------------------------------------------------
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: strip-h-prefix
+  namespace: venue
+spec:
+  stripPrefix:
+    prefixes:
+      - /h
+
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: strip-partner-prefix
+  namespace: venue
+spec:
+  stripPrefix:
+    prefixes:
+      - /partner
+
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: strip-play-prefix
+  namespace: venue
+spec:
+  stripPrefix:
+    prefixes:
+      - /play
+
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: strip-sc-ins-prefix
+  namespace: venue
+spec:
+  stripPrefix:
+    prefixes:
+      - /sc-ins
+
+---
+# studio-admin-acme cutover 용 — /acme -> /studio-acme
+# (services 의 studioacme 모듈 controller 가 /studio-acme/* prefix 사용)
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: replace-acme-prefix
+  namespace: venue
+spec:
+  replacePathRegex:
+    regex: "^/acme"
+    replacement: "/studio-acme"

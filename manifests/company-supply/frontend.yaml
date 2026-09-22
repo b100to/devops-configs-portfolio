@@ -1,0 +1,100 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: frontend
+  namespace: company-items
+  labels:
+    app: company-items-frontend
+    app.kubernetes.io/name: company-items-frontend
+    app.kubernetes.io/instance: company-items-frontend
+    app.kubernetes.io/component: frontend
+    app.kubernetes.io/part-of: company-items-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: company-items-frontend
+      app.kubernetes.io/instance: company-items-frontend
+  template:
+    metadata:
+      labels:
+        app: company-items-frontend
+        app.kubernetes.io/name: company-items-frontend
+        app.kubernetes.io/instance: company-items-frontend
+        app.kubernetes.io/component: frontend
+        app.kubernetes.io/part-of: company-items-system
+    spec:
+      containers:
+        - name: frontend
+          image: 111111111111.dkr.ecr.ap-northeast-2.amazonaws.com/company-items-frontend:v1.0.5
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 3000
+          envFrom:
+            - configMapRef:
+                name: frontend-config
+          env:
+            - name: REACT_APP_API_URL
+              value: "https://company-supply.dev.acme.example"
+          startupProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 60
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 18  # 최대 240초 대기 (webpack dev server 번들링 대기)
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 0  # startupProbe 통과 후 시작
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 0
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: "500m"
+              memory: "1Gi"
+            limits:
+              cpu: "1000m"
+              memory: "2Gi"
+      initContainers:
+        - name: wait-for-backend
+          image: busybox:1.35
+          command:
+            [
+              "sh",
+              "-c",
+              "until nc -z backend-service 8080; do echo waiting for backend; sleep 2; done;",
+            ]
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: frontend-service
+  namespace: company-items
+  labels:
+    app: company-items-frontend
+    app.kubernetes.io/name: company-items-frontend
+    app.kubernetes.io/instance: company-items-frontend
+    app.kubernetes.io/component: frontend
+    app.kubernetes.io/part-of: company-items-system
+spec:
+  selector:
+    app.kubernetes.io/name: company-items-frontend
+    app.kubernetes.io/instance: company-items-frontend
+  ports:
+    - port: 80
+      targetPort: 3000
+      protocol: TCP
+  type: ClusterIP

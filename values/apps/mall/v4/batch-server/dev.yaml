@@ -1,0 +1,125 @@
+# =============================================================================
+# Mall v4 Batch Server - Development Environment
+# Argo Workflows CronWorkflow에서 호출하는 HTTP API 서버
+# DNS: mall-v4-batch.mall.svc.cluster.local:8080
+# =============================================================================
+global:
+  env: dev
+  registry:
+    accountId: "111111111111"
+    region: "ap-northeast-2"
+
+# =============================================================================
+# Application
+# =============================================================================
+fullnameOverride: mall-v4-batch
+
+namespace:
+  name: mall
+
+# =============================================================================
+# Image
+# =============================================================================
+image:
+  repository: acmemall-backend-v4/dev/batch
+  tag: "0ec0107-3849"
+  pullPolicy: IfNotPresent
+
+# =============================================================================
+# Service Account
+# =============================================================================
+serviceAccount:
+  # app-mall SA는 mall-v4-api가 소유 (create:true 중복 시 ArgoCD 앱 간 소유권 충돌로 영구 OutOfSync)
+  create: false
+  name: app-mall
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::111111111111:role/eks-pod-identity-app-mall-v2
+
+# =============================================================================
+# Deployment
+# =============================================================================
+replicaCount: 1
+
+# Spring Batch graceful shutdown 600s + 여유 30s
+terminationGracePeriodSeconds: 630
+
+priorityClassName: very-high-priority
+
+labels:
+  env: dev
+
+# =============================================================================
+# Service
+# =============================================================================
+service:
+  enabled: true
+  type: ClusterIP
+  port: 80
+  targetPort: 8080
+
+# =============================================================================
+# Health Checks
+# =============================================================================
+livenessProbe:
+  enabled: true
+  httpGet:
+    path: /actuator/health/liveness
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 15
+  timeoutSeconds: 1
+  failureThreshold: 3
+  successThreshold: 1
+
+readinessProbe:
+  enabled: true
+  httpGet:
+    path: /actuator/health/readiness
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 15
+  timeoutSeconds: 1
+  failureThreshold: 3
+  successThreshold: 1
+
+startupProbe:
+  enabled: true
+  httpGet:
+    path: /actuator/health/liveness
+    port: http
+  periodSeconds: 10
+  failureThreshold: 30
+
+# =============================================================================
+# Resources
+# =============================================================================
+resources:
+  requests:
+    cpu: 100m
+    memory: 2Gi
+  limits:
+    memory: 2Gi
+
+# =============================================================================
+# Autoscaling
+# =============================================================================
+autoscaling:
+  enabled: false
+
+# =============================================================================
+# Environment Variables
+# =============================================================================
+envFrom: []
+
+# =============================================================================
+# AWS
+# =============================================================================
+aws:
+  enabled: true
+  region: ap-northeast-2
+
+# =============================================================================
+# Scheduling
+# =============================================================================
+# 단일 AZ 환경이므로 topologySpread 비활성화
+topologySpreadConstraints: []

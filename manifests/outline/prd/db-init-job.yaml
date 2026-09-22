@@ -1,0 +1,91 @@
+# =============================================================================
+# Outline DB 초기화 Job
+# - Airflow Aurora PostgreSQL에 outline 유저 + 데이터베이스 생성
+# - 멱등성: 이미 존재해도 에러 없음 (IF NOT EXISTS)
+# - 기존 Airflow DB/유저에 영향 없음 (outline 관련 객체만 생성)
+# - 사전 조건:
+#     1. airflow-rds-master ExternalSecret 동기화 완료
+#     2. outline-secrets ExternalSecret 동기화 완료 (DB_PASSWORD 필드 필요)
+# =============================================================================
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: outline-db-init
+  namespace: outline
+  annotations:
+    # 재실행 필요 시: kubectl delete job outline-db-init -n outline && argocd app sync outline
+    # wave 2: ExternalSecret 동기화(wave 1) 후 DB 초기화, Deployment(wave 3) 이전
+    argocd.argoproj.io/sync-wave: "2"
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: HookSucceeded
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+        - name: psql
+          image: postgres:16-alpine
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              RDS_HOST="airflow.cluster-abcdefghijkl.ap-northeast-2.rds.amazonaws.com"
+
+              echo "==> Airflow Aurora에 outline 유저/DB 생성 중..."
+
+              # Aurora PG에서 CREATE DATABASE ... OWNER outline 을 하려면
+              # 마스터 유저가 outline 역할을 가져야 함 (GRANT ROLE 필요)
+              # 따라서: 1) 유저 생성 2) GRANT 3) DB 생성 순서로 진행
+
+              PGPASSWORD="${MASTER_PASSWORD}" psql \
+                -h "${RDS_HOST}" \
+                -U "${MASTER_USER}" \
+                -d postgres \
+                -v ON_ERROR_STOP=0 \
+                -c "CREATE USER outline WITH PASSWORD '${OUTLINE_DB_PASSWORD}';" 2>&1 | grep -v "already exists" || true
+
+              PGPASSWORD="${MASTER_PASSWORD}" psql \
+                -h "${RDS_HOST}" \
+                -U "${MASTER_USER}" \
+                -d postgres \
+                -c "GRANT outline TO ${MASTER_USER};" 2>&1 | grep -v "already a member" || true
+
+              PGPASSWORD="${MASTER_PASSWORD}" psql \
+                -h "${RDS_HOST}" \
+                -U "${MASTER_USER}" \
+                -d postgres \
+                -v ON_ERROR_STOP=0 \
+                -c "CREATE DATABASE outline OWNER outline;" 2>&1 | grep -v "already exists" || true
+
+              # 기존 유저 비밀번호 변경 (시크릿 로테이션 대응)
+              PGPASSWORD="${MASTER_PASSWORD}" psql \
+                -h "${RDS_HOST}" \
+                -U "${MASTER_USER}" \
+                -d postgres \
+                -c "ALTER USER outline WITH PASSWORD '${OUTLINE_DB_PASSWORD}';"
+
+              echo "==> 완료. outline 유저/DB 준비됨."
+          env:
+            - name: MASTER_USER
+              valueFrom:
+                secretKeyRef:
+                  name: airflow-rds-master
+                  key: username
+            - name: MASTER_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: airflow-rds-master
+                  key: password
+            - name: OUTLINE_DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: outline-secrets
+                  key: DB_PASSWORD
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 64Mi

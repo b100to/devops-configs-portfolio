@@ -1,0 +1,125 @@
+# =============================================================================
+# Mall Services Routes - Development
+# api-v4.dev.acme.example, apiv3.dev.acme.example, recommendation-api.dev.acme.example
+# =============================================================================
+
+---
+# Mall V4 API (api-v4.dev.acme.example)
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: mall-v4
+  namespace: mall
+  labels:
+    environment: dev
+spec:
+  entryPoints:
+    - web
+  routes:
+    # /seller/ -> mall-v4-api-seller
+    - match: Host(`api-v4.dev.acme.example`) && PathPrefix(`/seller/`)
+      kind: Rule
+      middlewares:
+        - name: strip-seller-prefix
+          namespace: mall
+        - name: cors-headers
+          namespace: traefik
+      services:
+        - name: mall-v4-api-seller
+          port: 80
+      priority: 20
+
+    # /admin/ -> mall-v4-api-admin
+    - match: Host(`api-v4.dev.acme.example`) && PathPrefix(`/admin/`)
+      kind: Rule
+      middlewares:
+        - name: strip-admin-prefix
+          namespace: mall
+        - name: cors-headers
+          namespace: traefik
+      services:
+        - name: mall-v4-api-admin
+          port: 80
+      priority: 20
+
+    # / -> mall-v4-api (catch-all)
+    - match: Host(`api-v4.dev.acme.example`) && PathPrefix(`/`)
+      kind: Rule
+      middlewares:
+        - name: cors-headers
+          namespace: traefik
+      services:
+        - name: mall-v4-api
+          port: 80
+      priority: 10
+
+---
+# Mall V3 API (apiv3.dev.acme.example/mall/)
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: mall-v3
+  namespace: mall
+  labels:
+    environment: dev
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`apiv3.dev.acme.example`) && PathPrefix(`/mall/`)
+      kind: Rule
+      middlewares:
+        - name: strip-mall-prefix
+          namespace: mall
+        - name: cors-headers
+          namespace: traefik
+      services:
+        - name: mall-v3-api
+          port: 80
+      priority: 20
+
+---
+# Mall Recommendation API (recommendation-api.dev.acme.example)
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: mall-reco
+  namespace: mall
+  labels:
+    environment: dev
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`recommendation-api.dev.acme.example`) && PathPrefix(`/recommendation`)
+      kind: Rule
+      middlewares:
+        - name: cors-headers
+          namespace: traefik
+      services:
+        - name: mall-reco-api
+          port: 80
+
+---
+# Acme Compass v2 (compass.dev.acme.example)
+# nginx 프론트가 /api를 백엔드(acme-compass-v2)로 직접 프록시하므로 프론트 하나로만 라우팅
+# 사내 IP만 허용 (company-ip-allowlist)
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: acme-compass-v2
+  namespace: mall
+  labels:
+    environment: dev
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`compass.dev.acme.example`)
+      kind: Rule
+      middlewares:
+        - name: company-ip-allowlist
+          namespace: traefik
+      services:
+        - name: acme-compass-v2-front
+          port: 80

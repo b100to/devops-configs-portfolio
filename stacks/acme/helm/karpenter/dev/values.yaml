@@ -1,0 +1,30 @@
+replicas: 1
+settings:
+  clusterName: ${cluster_name}
+  clusterEndpoint: ${cluster_endpoint}
+  interruptionQueue: ${queue_name}
+serviceAccount:
+  annotations:
+    eks.amazonaws.com/role-arn: ${iam_role_arn}
+tolerations:
+  - key: CriticalAddonsOnly
+    operator: Exists
+podLabels:
+  CriticalAddonsOnly: "true"
+resources:
+  requests:
+    cpu: 200m
+    memory: 200Mi
+  limits:
+    cpu: 300m
+    memory: 300Mi
+
+affinity:
+  nodeAffinity:
+    requiredDuringSchedulingIgnoredDuringExecution:
+      nodeSelectorTerms:
+        - matchExpressions:
+            - key: eks.amazonaws.com/compute-type
+              operator: In
+              values:
+                - fargate

@@ -1,0 +1,32 @@
+# =============================================================================
+# Services Monolith Direct Access - Development
+# services.dev.acme.example → services namespace 의 services 로 직접 라우팅.
+#
+# 용도:
+#   - Swagger UI: services.dev.acme.example/swagger-ui.html
+#   - REST Docs:  services.dev.acme.example/docs/index.html
+#   - 직접 endpoint smoke test (api.dev.acme.example 라우팅 cutover 와 무관)
+#
+# 주의: 인증 / CORS 등은 services 모놀리스 자체의 SecurityConfig 가 처리.
+# =============================================================================
+
+---
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: services-monolith
+  namespace: services
+  labels:
+    environment: dev
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`services.dev.acme.example`)
+      kind: Rule
+      middlewares:
+        - name: cors-headers
+          namespace: traefik
+      services:
+        - name: services
+          port: 80

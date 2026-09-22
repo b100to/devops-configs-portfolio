@@ -1,0 +1,20 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: airflow-green-manifests
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/AcmeCorp/devops-configs.git
+    targetRevision: main
+    path: manifests/airflow-green/prd
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: airflow-green
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

@@ -1,0 +1,76 @@
+clusterAgent:
+  replicas: 1
+
+datadog:
+  # NOTE: `datadog.processingRules` 키는 Helm chart 3.x에서 존재하지 않음(차트가 무시)
+  # 글로벌 로그 가공 규칙은 `agents.containers.agent.env` 의 `DD_LOGS_CONFIG_PROCESSING_RULES` 로 주입
+
+  containerExclude: >
+    name:*
+  containerInclude: >
+    kube_namespace:mall
+    kube_namespace:company-items
+    kube_namespace:venue
+    kube_namespace:web
+
+  clusterName: acme-main-v2-dev
+  # API key는 ExternalSecret(manifests/external-secrets/dev/datadog.yaml)이 만든
+  # `datadog-api-key` 시크릿에서 주입한다. 평문 노출 금지.
+  apiKeyExistingSecret: datadog-api-key
+
+  # Unified Service Tagging: 모든 로그/메트릭/트레이스에 env 태그 주입
+  tags:
+    - "env:dev"
+
+  # 기존 네임스페이스 태그 설정
+  namespaceAnnotationsAsTags:
+    env: dev
+  namespaceLabelsAsTags:
+    env: dev
+
+  # 🔥 노드 레이블을 태그로 수집 (새로 추가!)
+  nodeLabelsAsTags:
+    node-group-type: "node_group_type"
+    karpenter.sh/nodepool: "karpenter_nodepool"
+    topology.kubernetes.io/zone: "availability_zone"
+    node.kubernetes.io/instance-type: "instance_type"
+    karpenter.sh/capacity-type: "capacity_type"
+    beta.kubernetes.io/instance-type: "beta_instance_type"
+    kubernetes.io/hostname: "kubernetes_hostname"
+  # 🔥 Pod 레이블도 태그로 수집 (새로 추가, 선택사항)
+  podLabelsAsTags:
+    app: "app"
+    env: "env"
+    version: "version"
+    component: "component"
+    app.kubernetes.io/name: "app_name"
+    app.kubernetes.io/component: "app_component"
+
+  loglevel: ERROR
+  logs:
+    enabled: true
+    containerCollectAll: false # ✅ 수정
+    autoMultiLineDetection: false # ✅ Dev에서는 불필요
+  apm:
+    enabled: false
+    portEnabled: false
+  processAgent:
+    processCollection: false
+    processDiscovery: false
+
+agents:
+  containers:
+    agent:
+      logLevel: ERROR
+      # 글로벌 로그 가공 규칙 (prd와 동일) — containerCollectAll 활성화 시 자동 적용
+      # NOTE: extract_log_level / exclude_info_debug_trace 는 logback JSON `"level":"WARN"` 값까지 마스킹/매칭해서
+      #       파이프라인 status-remapper 가 동작 못하고 WARN 로그가 INFO 로 분류되는 문제가 있어 제거함.
+      env:
+        - name: DD_LOGS_CONFIG_PROCESSING_RULES
+          value: |-
+            [{"type":"exclude_at_match","name":"exclude_kube_probe","pattern":"kube-probe"},{"type":"exclude_at_match","name":"exclude_health_checks","pattern":"GET\\s+\"?/(health|healthz|ready|readyz|live|livez|metrics|actuator)"}]
+
+# 보안 설정
+podSecurity:
+  apparmor:
+    enabled: false

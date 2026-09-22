@@ -1,0 +1,81 @@
+# =============================================================================
+# Mall V4 Batch NodePool - DISABLED
+# =============================================================================
+# Batch workloads consolidated into base nodepool (r6i.2xlarge)
+# Uncomment below to re-enable dedicated batch nodepool
+# =============================================================================
+
+# apiVersion: karpenter.sh/v1
+# kind: NodePool
+# metadata:
+#   name: mall-v4-batch
+#   labels:
+#     node-group-type: mall-v4-batch
+# spec:
+#   weight: 10
+#   template:
+#     metadata:
+#       labels:
+#         node-group-type: mall-v4-batch
+#     spec:
+#       nodeClassRef:
+#         group: karpenter.k8s.aws
+#         kind: EC2NodeClass
+#         name: mall-v4-batch
+#       requirements:
+#         - key: node.kubernetes.io/instance-type
+#           operator: In
+#           values:
+#             - "m6g.xlarge" # 4 vCPU, 16 GiB RAM (ARM)
+#         - key: kubernetes.io/arch
+#           operator: In
+#           values:
+#             - arm64
+#         - key: kubernetes.io/os
+#           operator: In
+#           values:
+#             - linux
+#         - key: karpenter.sh/capacity-type
+#           operator: In
+#           values:
+#             - spot
+#       taints:
+#         - effect: NoSchedule
+#           key: node-group-type
+#           value: mall-v4-batch
+#   limits:
+#     cpu: 5
+#   disruption:
+#     consolidationPolicy: WhenEmptyOrUnderutilized
+#     consolidateAfter: 1m
+# ---
+# apiVersion: karpenter.k8s.aws/v1
+# kind: EC2NodeClass
+# metadata:
+#   name: mall-v4-batch
+# spec:
+#   amiFamily: "AL2023"
+#   amiSelectorTerms:
+#     - alias: al2023@latest
+#   role: arn:aws:iam::111111111111:role/Karpenter-acme-main-v2-dev-20251208081651189800000005
+#   subnetSelectorTerms:
+#     - tags:
+#         karpenter.sh/discovery: acme-main-v2-dev
+#   securityGroupSelectorTerms:
+#     - tags:
+#         karpenter.sh/discovery: acme-main-v2-dev
+#   blockDeviceMappings:
+#     - deviceName: /dev/xvda
+#       ebs:
+#         deleteOnTermination: true
+#         encrypted: true
+#         volumeSize: 80Gi
+#         volumeType: gp3
+#   metadataOptions:
+#     httpEndpoint: enabled
+#     httpTokens: required
+#     httpPutResponseHopLimit: 1
+#   tags:
+#     Name: acme-main-dev-mall-v4-batch
+#     karpenter.sh/discovery: acme-main-v2-dev
+#     Environment: dev

@@ -1,0 +1,100 @@
+name: stockroom
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "apps/stockroom/backend/**"
+      - "apps/stockroom/frontend/**"
+      - ".github/workflows/stockroom.yml"
+
+env:
+  AWS_REGION: ap-northeast-2
+  PRD_ECR: 222222222222.dkr.ecr.ap-northeast-2.amazonaws.com
+  BACKEND_IMAGE: stockroom/backend
+  FRONTEND_IMAGE: stockroom/frontend
+
+jobs:
+  detect-changes:
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.filter.outputs.backend }}
+      frontend: ${{ steps.filter.outputs.frontend }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            backend:
+              - 'apps/stockroom/backend/**'
+            frontend:
+              - 'apps/stockroom/frontend/**'
+
+  # ─── prd ECR ──────────────────────────────────────
+
+  build-backend:
+    needs: detect-changes
+    if: github.event_name == 'workflow_dispatch' || needs.detect-changes.outputs.backend == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set short SHA
+        run: echo "SHORT_SHA=${GITHUB_SHA::7}" >> $GITHUB_ENV
+
+      - name: Configure AWS credentials (prd)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.PRD_AWS_ACCOUNT_ID }}:role/GitHubActions
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to prd ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push backend
+        uses: docker/build-push-action@v6
+        with:
+          context: apps/stockroom/backend
+          push: true
+          tags: |
+            ${{ env.PRD_ECR }}/${{ env.BACKEND_IMAGE }}:${{ env.SHORT_SHA }}
+            ${{ env.PRD_ECR }}/${{ env.BACKEND_IMAGE }}:latest
+
+  build-frontend:
+    needs: detect-changes
+    if: github.event_name == 'workflow_dispatch' || needs.detect-changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set short SHA
+        run: echo "SHORT_SHA=${GITHUB_SHA::7}" >> $GITHUB_ENV
+
+      - name: Configure AWS credentials (prd)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.PRD_AWS_ACCOUNT_ID }}:role/GitHubActions
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to prd ECR
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push frontend
+        uses: docker/build-push-action@v6
+        with:
+          context: apps/stockroom/frontend
+          push: true
+          build-args: |
+            VITE_API_URL=
+            VITE_GOOGLE_CLIENT_ID=${{ secrets.COMPANY_SUPPLY_GOOGLE_CLIENT_ID }}
+          tags: |
+            ${{ env.PRD_ECR }}/${{ env.FRONTEND_IMAGE }}:${{ env.SHORT_SHA }}
+            ${{ env.PRD_ECR }}/${{ env.FRONTEND_IMAGE }}:latest

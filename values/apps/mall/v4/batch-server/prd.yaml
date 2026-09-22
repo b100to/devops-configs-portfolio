@@ -1,0 +1,140 @@
+# =============================================================================
+# Mall v4 Batch Server - Production Environment
+# Argo Workflows CronWorkflow에서 호출하는 HTTP API 서버
+# DNS: mall-v4-batch.mall.svc.cluster.local:8080
+# =============================================================================
+global:
+  env: prd
+  registry:
+    accountId: "222222222222"
+    region: "ap-northeast-2"
+
+# =============================================================================
+# Application
+# =============================================================================
+fullnameOverride: mall-v4-batch
+
+namespace:
+  name: mall
+
+# =============================================================================
+# Image
+# =============================================================================
+image:
+  repository: acmemall-backend-v4/prd/batch
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# =============================================================================
+# Service Account
+# =============================================================================
+serviceAccount:
+  # app-mall SA는 mall-v4-api가 소유 (create:true 중복 시 ArgoCD 앱 간 소유권 충돌로 영구 OutOfSync)
+  create: false
+  name: app-mall
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::222222222222:role/eks-pod-identity-app-mall-v2
+
+# =============================================================================
+# Deployment
+# =============================================================================
+replicaCount: 2
+
+# Spring Batch graceful shutdown 600s + 여유 30s
+terminationGracePeriodSeconds: 630
+
+priorityClassName: medium-priority
+
+podAnnotations:
+  admission.datadoghq.com/java-lib.version: "v1.37.1"
+
+labels:
+  env: prd
+
+# =============================================================================
+# Service
+# =============================================================================
+service:
+  enabled: true
+  type: ClusterIP
+  port: 80
+  targetPort: 8080
+
+# =============================================================================
+# Health Checks
+# =============================================================================
+livenessProbe:
+  enabled: true
+  httpGet:
+    path: /actuator/health/liveness
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 15
+  timeoutSeconds: 1
+  failureThreshold: 3
+  successThreshold: 1
+
+readinessProbe:
+  enabled: true
+  httpGet:
+    path: /actuator/health/readiness
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 15
+  timeoutSeconds: 1
+  failureThreshold: 3
+  successThreshold: 1
+
+startupProbe:
+  enabled: true
+  httpGet:
+    path: /actuator/health/liveness
+    port: http
+  periodSeconds: 10
+  failureThreshold: 30
+
+# =============================================================================
+# Resources
+# =============================================================================
+resources:
+  requests:
+    cpu: 200m
+    memory: 2Gi
+  limits:
+    memory: 2Gi
+
+# =============================================================================
+# Autoscaling
+# =============================================================================
+autoscaling:
+  enabled: false
+
+# =============================================================================
+# Environment Variables
+# =============================================================================
+envFrom:
+  - secretRef:
+      name: aws-account
+
+# =============================================================================
+# AWS
+# =============================================================================
+aws:
+  enabled: true
+  region: ap-northeast-2
+
+# =============================================================================
+# Datadog
+# =============================================================================
+datadog:
+  enabled: true
+  version: batch
+  logsInjection: "true"
+  traceSampleRate: "0.1"
+
+# =============================================================================
+# Scheduling
+# =============================================================================
+# 멀티 AZ 이중화를 위한 topologySpread 활성화
+defaultTopologySpread:
+  enabled: true

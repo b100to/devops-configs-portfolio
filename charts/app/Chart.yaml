@@ -1,0 +1,6 @@
+apiVersion: v2
+name: app
+description: A unified Helm chart for all application workloads
+type: application
+version: 1.3.0
+appVersion: "1.0.0"

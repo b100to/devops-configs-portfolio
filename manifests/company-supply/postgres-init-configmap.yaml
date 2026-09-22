@@ -1,0 +1,211 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+    name: postgres-init-scripts
+    namespace: company-items
+    labels:
+        app: postgres
+data:
+    01-schema.sql: |
+        -- 회사 물품 신청 시스템 데이터베이스 스키마 (v2)
+
+        -- 조직 테이블
+        CREATE TABLE organizations (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(100) NOT NULL UNIQUE,
+            description TEXT,
+            is_active BOOLEAN DEFAULT true,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        -- 초기 조직 데이터
+        INSERT INTO organizations (name, description) VALUES
+        ('경영지원실', '경영 기획 및 전략 수립'),
+        ('사업1실', '비즈니스 성장 전략'),
+        ('사업2실', '2사업부 성장'),
+        ('플랫폼실', '플랫폼 사업부'),
+        ('기술실', 'IT 제품 개발'),
+        ('알파', '알파 서비스'),
+        ('베타', '베타'),
+        ('감마', '감마 서비스'),
+        ('오빗', '오빗');
+
+        -- 사용자 테이블
+        CREATE TABLE users (
+            id SERIAL PRIMARY KEY,
+            korean_name VARCHAR(100) NOT NULL,
+            english_name VARCHAR(100) NOT NULL,
+            password_hash VARCHAR(255) NOT NULL, -- bcrypt 해시된 4자리 패스워드
+            organization_id INTEGER REFERENCES organizations(id),
+            team_name VARCHAR(100) NOT NULL,
+            email VARCHAR(255) UNIQUE,
+            is_active BOOLEAN DEFAULT true,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            last_login_at TIMESTAMP
+        );
+
+        -- 카테고리 테이블
+        CREATE TABLE categories (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(100) NOT NULL,
+            description TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        -- 초기 카테고리 데이터
+        INSERT INTO categories (name, description) VALUES
+        ('필기구', '각종 펜, 연필, 샤프 등'),
+        ('사무용품', '일반적인 사무용품'),
+        ('소모품', '소모성 사무용품'),
+        ('의료용품', '응급처치용 의료용품');
+
+        -- 물품 테이블
+        CREATE TABLE items (
+            id SERIAL PRIMARY KEY,
+            name VARCHAR(255) NOT NULL,
+            description TEXT,
+            category_id INTEGER REFERENCES categories(id),
+            available_quantity INTEGER NOT NULL DEFAULT 0,
+            max_per_user INTEGER NOT NULL DEFAULT 1,
+            image_url TEXT,
+            is_active BOOLEAN DEFAULT true,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        -- 신청 테이블
+        CREATE TABLE requests (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id),
+            item_id INTEGER NOT NULL REFERENCES items(id),
+            quantity INTEGER NOT NULL DEFAULT 1,
+            status VARCHAR(50) DEFAULT 'pending',
+            notes TEXT,
+            requested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            processed_at TIMESTAMP,
+            processed_by INTEGER REFERENCES users(id)
+        );
+
+        -- 관리자 테이블
+        CREATE TABLE admins (
+            id SERIAL PRIMARY KEY,
+            user_id INTEGER NOT NULL REFERENCES users(id),
+            role VARCHAR(50) NOT NULL DEFAULT 'admin',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        -- 인덱스 생성
+        CREATE INDEX idx_users_korean_name ON users(korean_name);
+        CREATE INDEX idx_users_english_name ON users(english_name);
+        CREATE INDEX idx_users_organization ON users(organization_id);
+        CREATE INDEX idx_users_team ON users(team_name);
+        CREATE INDEX idx_items_category ON items(category_id);
+        CREATE INDEX idx_items_active ON items(is_active);
+        CREATE INDEX idx_requests_user ON requests(user_id);
+        CREATE INDEX idx_requests_item ON requests(item_id);
+        CREATE INDEX idx_requests_status ON requests(status);
+        CREATE INDEX idx_admins_user ON admins(user_id);
+        CREATE INDEX idx_organizations_name ON organizations(name);
+
+        -- 업데이트 시간 자동 갱신 함수
+        CREATE OR REPLACE FUNCTION update_updated_at_column()
+        RETURNS TRIGGER AS $$
+        BEGIN
+            NEW.updated_at = CURRENT_TIMESTAMP;
+            RETURN NEW;
+        END;
+        $$ language 'plpgsql';
+
+        -- items 테이블 업데이트 트리거
+        CREATE TRIGGER update_items_updated_at BEFORE UPDATE ON items
+            FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+    02-seed.sql: |
+        -- 초기 데이터 v2
+
+        -- 샘플 사용자 데이터 (패스워드는 bcrypt로 해시된 4자리)
+        -- 패스워드 예시: 1234 -> $2a$10$hashedpassword (실제로는 bcrypt 라이브러리로 해시)
+        INSERT INTO users (korean_name, english_name, password_hash, organization_id, team_name, email) VALUES
+        ('1', '1', '1234', 1, '팀', '1@acme-corp.example'), -- 테스트용 사용자
+        ('홍길동', 'Rowan', '$2a$10$N9qo8uLOickgx2ZMRZoMye1VdKzquG2ZKMKHMQw6Kx/XQkPQZqHRa', 5, '인프라팀', 'rowan@acme-corp.example'), -- 패스워드: 1234
+        ('김철수', 'Charles', '$2a$10$N9qo8uLOickgx2ZMRZoMye1VdKzquG2ZKMKHMQw6Kx/XQkPQZqHRa', 5, '백엔드팀', 'charles@acme-corp.example'), -- 패스워드: 1234
+        ('이영희', 'Emma', '$2a$10$N9qo8uLOickgx2ZMRZoMye1VdKzquG2ZKMKHMQw6Kx/XQkPQZqHRa', 2, '디자인팀', 'emma@acme-corp.example'), -- 패스워드: 1234
+        ('박민준', 'Mike', '$2a$10$N9qo8uLOickgx2ZMRZoMye1VdKzquG2ZKMKHMQw6Kx/XQkPQZqHRa', 3, '마케팅팀', 'mike@acme-corp.example'), -- 패스워드: 1234
+        ('관리자', 'Admin', '$2a$10$N9qo8uLOickgx2ZMRZoMye1VdKzquG2ZKMKHMQw6Kx/XQkPQZqHRa', 5, '운영팀', 'admin@acme-corp.example'); -- 패스워드: 1234
+
+        -- 관리자 설정
+        INSERT INTO admins (user_id, role) VALUES
+        (5, 'super_admin');
+
+        -- 아이템 데이터 (풍부한 카테고리별 아이템)
+        INSERT INTO items (name, description, category_id, available_quantity, max_per_user, image_url) VALUES
+        -- 필기구 (category_id: 1)
+        ('볼펜(검정)', '검은색 볼펜', 1, 200, 5, '/images/pen-black.jpg'),
+        ('볼펜(파랑)', '파란색 볼펜', 1, 150, 5, '/images/pen-blue.jpg'),
+        ('볼펜(빨강)', '빨간색 볼펜', 1, 100, 5, '/images/pen-red.jpg'),
+        ('3색 볼펜', '빨강, 파랑, 검정 3색 볼펜', 1, 100, 3, '/images/pen-3color.jpg'),
+        ('샤프(0.5mm)', '0.5mm 샤프펜슬', 1, 80, 3, '/images/mechanical-pencil-05.jpg'),
+        ('샤프(0.7mm)', '0.7mm 샤프펜슬', 1, 60, 3, '/images/mechanical-pencil-07.jpg'),
+        ('샤프심 0.5mm', '0.5mm 샤프심 12개입', 1, 100, 2, '/images/lead-05.jpg'),
+        ('샤프심 0.7mm', '0.7mm 샤프심 12개입', 1, 80, 2, '/images/lead-07.jpg'),
+        ('연필(2B)', '2B 연필', 1, 120, 5, '/images/pencil-2b.jpg'),
+        ('연필(HB)', 'HB 연필', 1, 100, 5, '/images/pencil-hb.jpg'),
+        ('지우개', '일반 지우개', 1, 150, 5, '/images/eraser.jpg'),
+        ('형광펜(노랑)', '노란색 형광펜', 1, 80, 3, '/images/highlighter-yellow.jpg'),
+        ('형광펜(분홍)', '분홍색 형광펜', 1, 60, 3, '/images/highlighter-pink.jpg'),
+        ('형광펜(초록)', '초록색 형광펜', 1, 60, 3, '/images/highlighter-green.jpg'),
+        ('마커펜(검정)', '검은색 마커펜', 1, 40, 2, '/images/marker-black.jpg'),
+        ('마커펜(빨강)', '빨간색 마커펜', 1, 30, 2, '/images/marker-red.jpg'),
+
+        -- 사무용품 (category_id: 2)
+        ('자(30cm)', '30cm 투명 자', 2, 40, 1, '/images/ruler-30cm.jpg'),
+        ('자(15cm)', '15cm 투명 자', 2, 60, 2, '/images/ruler-15cm.jpg'),
+        ('삼각자', '삼각자 세트', 2, 25, 1, '/images/triangle-ruler.jpg'),
+        ('컴퍼스', '제도용 컴퍼스', 2, 20, 1, '/images/compass.jpg'),
+        ('스카치 테이프', '투명 스카치 테이프', 2, 50, 2, '/images/scotch-tape.jpg'),
+        ('양면테이프', '양면 접착 테이프', 2, 30, 2, '/images/double-tape.jpg'),
+        ('포스트잇(노랑)', '노란색 포스트잇', 2, 100, 3, '/images/postit-yellow.jpg'),
+        ('포스트잇(분홍)', '분홍색 포스트잇', 2, 80, 3, '/images/postit-pink.jpg'),
+        ('포스트잇(블루)', '파란색 포스트잇', 2, 80, 3, '/images/postit-blue.jpg'),
+        ('클립(소)', '작은 클립 50개입', 2, 100, 3, '/images/clip-small.jpg'),
+        ('클립(중)', '중간 클립 30개입', 2, 80, 2, '/images/clip-medium.jpg'),
+        ('클립(대)', '큰 클립 20개입', 2, 50, 2, '/images/clip-large.jpg'),
+        ('스테이플러', '스테이플러', 2, 30, 1, '/images/stapler.jpg'),
+        ('스테이플러 심', '스테이플러 심 1000개입', 2, 50, 2, '/images/staple-refill.jpg'),
+        ('펀치', '2공 펀치', 2, 20, 1, '/images/punch.jpg'),
+        ('가위', '일반 가위', 2, 25, 1, '/images/scissors.jpg'),
+        ('커터칼', '커터칼', 2, 15, 1, '/images/cutter.jpg'),
+        ('커터날', '커터날 10개입', 2, 30, 2, '/images/cutter-blade.jpg'),
+        ('폴더(A4)', 'A4 클리어 폴더', 2, 100, 5, '/images/folder-a4.jpg'),
+        ('바인더', '3공 바인더', 2, 40, 2, '/images/binder.jpg'),
+        ('파일박스', '문서 보관용 파일박스', 2, 20, 1, '/images/file-box.jpg'),
+
+        -- 소모품 (category_id: 3)
+        ('A4 용지', 'A4 복사용지 500매', 3, 50, 2, '/images/paper-a4.jpg'),
+        ('메모지', '메모지 100매', 3, 80, 3, '/images/memo-pad.jpg'),
+        ('각티슈', '각티슈 200매', 3, 100, 2, '/images/tissue.jpg'),
+        ('물티슈', '물티슈 80매', 3, 80, 2, '/images/wet-tissue.jpg'),
+        ('휴지', '화장지 4롤', 3, 60, 1, '/images/toilet-paper.jpg'),
+        ('핸드크림', '핸드크림 50ml', 3, 40, 1, '/images/hand-cream.jpg'),
+        ('손소독제', '손소독제 250ml', 3, 30, 1, '/images/hand-sanitizer.jpg'),
+        ('건전지(AA)', 'AA 건전지 4개입', 3, 50, 2, '/images/battery-aa.jpg'),
+        ('건전지(AAA)', 'AAA 건전지 4개입', 3, 40, 2, '/images/battery-aaa.jpg'),
+        ('USB 메모리(16GB)', '16GB USB 메모리', 3, 25, 1, '/images/usb-16gb.jpg'),
+        ('USB 메모리(32GB)', '32GB USB 메모리', 3, 15, 1, '/images/usb-32gb.jpg'),
+        ('CD-R', 'CD-R 10장입', 3, 30, 2, '/images/cd-r.jpg'),
+        ('라벨지', '라벨 스티커 A4', 3, 40, 2, '/images/label-sticker.jpg'),
+
+        -- 의료용품 (category_id: 4)
+        ('밴드', '일회용 밴드 20매', 4, 100, 5, '/images/bandage.jpg'),
+        ('소독약', '소독용 알코올 100ml', 4, 30, 1, '/images/alcohol.jpg'),
+        ('진통제', '해열진통제 10정', 4, 50, 2, '/images/pain-killer.jpg'),
+        ('감기약', '종합감기약 12정', 4, 40, 2, '/images/cold-medicine.jpg'),
+        ('소화제', '소화제 20정', 4, 35, 2, '/images/digestive.jpg'),
+        ('비타민C', '비타민C 30정', 4, 30, 1, '/images/vitamin-c.jpg'),
+        ('파스', '동전파스 10매', 4, 40, 3, '/images/patch.jpg'),
+        ('아이스팩', '일회용 아이스팩', 4, 25, 2, '/images/ice-pack.jpg'),
+        ('거즈', '멸균거즈 10매', 4, 30, 2, '/images/gauze.jpg'),
+        ('탄력붕대', '탄력붕대 5cm', 4, 20, 1, '/images/elastic-bandage.jpg'),
+        ('체온계', '디지털 체온계', 4, 10, 1, '/images/thermometer.jpg'),
+        ('마스크', 'KF94 마스크 10매', 4, 100, 3, '/images/mask-kf94.jpg'),
+        ('일회용 장갑', '일회용 장갑 100매', 4, 50, 2, '/images/disposable-gloves.jpg');

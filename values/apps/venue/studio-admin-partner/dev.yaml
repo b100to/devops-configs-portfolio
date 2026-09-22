@@ -1,0 +1,137 @@
+# =============================================================================
+# Venue Beacon API - Development Environment
+# =============================================================================
+global:
+  env: dev
+  registry:
+    accountId: "111111111111"
+    region: "ap-northeast-2"
+
+# =============================================================================
+# Application
+# =============================================================================
+fullnameOverride: studio-admin-partner
+
+# Namespace (없으면 자동 생성)
+namespace:
+  name: venue
+
+# =============================================================================
+# Image
+# =============================================================================
+image:
+  repository: venue-admin-partner-dev
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# =============================================================================
+# Service Account
+# =============================================================================
+serviceAccount:
+  create: false
+  name: app-venue
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::111111111111:role/eks-pod-identity-app-venue-v2
+
+# =============================================================================
+# Deployment
+# =============================================================================
+# replicaCount: 1
+
+priorityClassName: high-priority
+
+labels:
+  env: dev
+
+# =============================================================================
+# Service
+# =============================================================================
+service:
+  enabled: true
+  type: ClusterIP
+  port: 80
+  targetPort: 8055
+
+# =============================================================================
+# Health Checks
+# =============================================================================
+startupProbe:
+  enabled: true
+  httpGet:
+    path: /partner/
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 30
+  timeoutSeconds: 10
+  failureThreshold: 10 # 330초 (5분)
+  successThreshold: 1
+
+livenessProbe:
+  enabled: true
+  httpGet:
+    path: /partner/
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 30
+  timeoutSeconds: 10
+  failureThreshold: 20 # 630초 (CPU throttle 환경 cold start 대응)
+  successThreshold: 1
+
+readinessProbe:
+  enabled: true
+  httpGet:
+    path: /partner/
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 30
+  timeoutSeconds: 10
+  failureThreshold: 20 # 630초 (CPU throttle 환경 cold start 대응)
+  successThreshold: 1
+
+# =============================================================================
+# Resources
+# =============================================================================
+resources:
+  requests:
+    cpu: 18m # Kubecost 7d avg 12m / 0.7 (limit 제거로 burst 허용)
+    memory: 800Mi
+  limits:
+    memory: 800Mi
+
+# =============================================================================
+# Autoscaling
+# =============================================================================
+autoscaling:
+  enabled: false
+
+# =============================================================================
+# Environment Variables
+# =============================================================================
+env:
+  - name: DD_TRACE_ENABLED
+    value: "false"
+  - name: SPRING_PROFILES_ACTIVE
+    value: dev
+
+# envFrom:
+#   - secretRef:
+#       name: aws-account
+
+# =============================================================================
+# AWS
+# =============================================================================
+aws:
+  enabled: true
+  region: ap-northeast-2
+
+# =============================================================================
+# Datadog
+# =============================================================================
+datadog:
+  enabled: false
+
+# =============================================================================
+# Scheduling
+# =============================================================================
+# 단일 AZ 환경이므로 topologySpread 비활성화
+topologySpreadConstraints: []

@@ -1,0 +1,18 @@
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: batch-slack-webhook
+  namespace: batch
+spec:
+  refreshInterval: "15m"
+  secretStoreRef:
+    name: aws-secrets-store
+    kind: ClusterSecretStore
+  target:
+    name: batch-slack-webhook
+    creationPolicy: Owner
+  data:
+    - secretKey: url
+      remoteRef:
+        key: eks/acme-main-v2-dev
+        property: batch_slack_webhook_url

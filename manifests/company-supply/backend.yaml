@@ -1,0 +1,100 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: company-items
+  labels:
+    app: company-items-backend
+    app.kubernetes.io/name: company-items-backend
+    app.kubernetes.io/instance: company-items-backend
+    app.kubernetes.io/component: backend
+    app.kubernetes.io/part-of: company-items-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: company-items-backend
+      app.kubernetes.io/instance: company-items-backend
+  template:
+    metadata:
+      labels:
+        app: company-items-backend
+        app.kubernetes.io/name: company-items-backend
+        app.kubernetes.io/instance: company-items-backend
+        app.kubernetes.io/component: backend
+        app.kubernetes.io/part-of: company-items-system
+    spec:
+      containers:
+        - name: backend
+          image: 111111111111.dkr.ecr.ap-northeast-2.amazonaws.com/company-items-backend:v1.0.5
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: backend-config
+          env:
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: backend-secret
+                  key: DB_USER
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: backend-secret
+                  key: DB_PASSWORD
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "10m" # Kubecost 7d avg 1m / 0.7 (min 10m)
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
+      initContainers:
+        - name: wait-for-postgres
+          image: busybox:1.35
+          command:
+            [
+              "sh",
+              "-c",
+              "until nc -z postgres-service 5432; do echo waiting for postgres; sleep 2; done;",
+            ]
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-service
+  namespace: company-items
+  labels:
+    app: company-items-backend
+    app.kubernetes.io/name: company-items-backend
+    app.kubernetes.io/instance: company-items-backend
+    app.kubernetes.io/component: backend
+    app.kubernetes.io/part-of: company-items-system
+spec:
+  selector:
+    app.kubernetes.io/name: company-items-backend
+    app.kubernetes.io/instance: company-items-backend
+  ports:
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP
+  type: ClusterIP

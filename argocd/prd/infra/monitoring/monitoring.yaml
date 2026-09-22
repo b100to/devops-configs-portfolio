@@ -1,0 +1,44 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: monitoring
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  sources:
+    - repoURL: https://github.com/AcmeCorp/devops-configs.git
+      targetRevision: main
+      path: .
+      ref: values
+    - repoURL: https://grafana.github.io/helm-charts
+      chart: grafana
+      targetRevision: 10.2.0
+      helm:
+        releaseName: grafana
+        valueFiles:
+          - $values/values/infra/monitoring/grafana/prd.yaml
+    - repoURL: https://grafana.github.io/helm-charts
+      chart: loki
+      targetRevision: 6.46.0
+      helm:
+        releaseName: loki
+        valueFiles:
+          - $values/values/infra/monitoring/loki/prd.yaml
+    - repoURL: https://fluent.github.io/helm-charts
+      chart: fluent-bit
+      targetRevision: 0.57.3
+      helm:
+        releaseName: fluent-bit
+        valueFiles:
+          - $values/values/infra/monitoring/fluent-bit/prd.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: monitoring
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

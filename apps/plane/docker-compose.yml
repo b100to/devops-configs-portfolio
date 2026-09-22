@@ -1,0 +1,155 @@
+services:
+  web:
+    image: makeplane/plane-frontend:v1.2.0
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      - api
+
+  space:
+    image: makeplane/plane-frontend:v1.2.0
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      - api
+
+  admin:
+    image: makeplane/plane-frontend:v1.2.0
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      - api
+
+  migrator:
+    image: makeplane/plane-backend:v1.2.0
+    restart: on-failure
+    command: ./bin/docker-entrypoint-migrator.sh
+    env_file: .env
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    image: makeplane/plane-backend:v1.2.0
+    restart: unless-stopped
+    command: ./bin/docker-entrypoint-api.sh
+    env_file: .env
+    depends_on:
+      - migrator
+      - db
+      - redis
+      - minio
+    volumes:
+      - logs:/code/plane/logs
+
+  worker:
+    image: makeplane/plane-backend:v1.2.0
+    restart: unless-stopped
+    command: ./bin/docker-entrypoint-worker.sh
+    env_file: .env
+    depends_on:
+      - api
+      - rabbitmq
+
+  beat-worker:
+    image: makeplane/plane-backend:v1.2.0
+    restart: unless-stopped
+    command: ./bin/docker-entrypoint-beat.sh
+    env_file: .env
+    depends_on:
+      - api
+      - rabbitmq
+
+  live:
+    image: makeplane/plane-live:v1.2.0
+    restart: unless-stopped
+    env_file: .env
+    depends_on:
+      - api
+
+  proxy:
+    image: makeplane/plane-proxy:v1.2.0
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    env_file: .env
+    depends_on:
+      - web
+      - api
+      - space
+      - admin
+
+  db:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-plane}
+      POSTGRES_USER: ${POSTGRES_USER:-plane}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-plane}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-plane}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3.13-alpine
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:-plane}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:-plane}
+    volumes:
+      - rabbitmqdata:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio:
+    image: minio/minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${AWS_ACCESS_KEY_ID:-access-key}
+      MINIO_ROOT_PASSWORD: ${AWS_SECRET_ACCESS_KEY:-secret-key}
+    volumes:
+      - miniodata:/data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  minio-init:
+    image: minio/mc
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 $${MINIO_ROOT_USER:-access-key} $${MINIO_ROOT_PASSWORD:-secret-key};
+      mc mb --ignore-existing local/$${BUCKET_NAME:-uploads};
+      mc anonymous set download local/$${BUCKET_NAME:-uploads};
+      "
+    env_file: .env
+
+volumes:
+  pgdata:
+  redisdata:
+  rabbitmqdata:
+  miniodata:
+  logs:

@@ -1,0 +1,78 @@
+# ALB Ingress for Traefik - Development
+# This creates an ALB that forwards all traffic to Traefik
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: traefik-alb-ingress
+  namespace: traefik
+  annotations:
+    # External DNS
+    external-dns.alpha.kubernetes.io/hostname: >
+      dev.acme-corp.example,
+      beacon.dev.acme.example,
+      api.dev.acme.example,
+      api-v4.dev.acme.example,
+      apiv3.dev.acme.example,
+      argo-workflows.dev.acme.example,
+      argocd.dev.acme.example,
+      auth.dev.acme.example,
+      company-supply.dev.acme.example,
+      grafana.dev.acme.example,
+      partner-admin.dev.acme.example,
+      kafka.dev.acme.example,
+      member.dev.acme.example,
+      venue-admin.dev.acme.example,
+      venue-partner.dev.acme.example,
+      play.dev.acme.example,
+      recommendation-api.dev.acme.example,
+      services.dev.acme.example,
+      traefik.dev.acme.example,
+      user.dev.acme.example,
+      plane.dev.acme.example,
+      compass.dev.acme.example,
+
+    # ALB 기본 설정
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/backend-protocol: HTTP
+    alb.ingress.kubernetes.io/backend-protocol-version: HTTP1
+
+    # Load Balancer 설정
+    alb.ingress.kubernetes.io/load-balancer-name: acme-main-v2-dev-traefik
+    alb.ingress.kubernetes.io/load-balancer-attributes: idle_timeout.timeout_seconds=60
+
+    # SSL/TLS 설정
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+    alb.ingress.kubernetes.io/certificate-arn: >
+      arn:aws:acm:ap-northeast-2:111111111111:certificate/00000000-0000-4000-8000-000000000006,
+      arn:aws:acm:ap-northeast-2:111111111111:certificate/00000000-0000-4000-8000-000000000012
+
+    # Health Check 설정 (Traefik /ping endpoint)
+    alb.ingress.kubernetes.io/healthcheck-path: /ping
+    alb.ingress.kubernetes.io/healthcheck-port: "9000"
+    alb.ingress.kubernetes.io/healthcheck-protocol: HTTP
+    alb.ingress.kubernetes.io/healthcheck-interval-seconds: "30"
+    alb.ingress.kubernetes.io/healthcheck-timeout-seconds: "5"
+    alb.ingress.kubernetes.io/success-codes: "200"
+
+    # 태그
+    alb.ingress.kubernetes.io/tags: >
+      Environment=dev,
+      ManagedBy=aws-load-balancer-controller,
+      Service=Traefik
+
+spec:
+  ingressClassName: alb
+  rules:
+    # Catch-all rule: 모든 트래픽을 Traefik으로 전달
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: traefik
+                port:
+                  number: 80

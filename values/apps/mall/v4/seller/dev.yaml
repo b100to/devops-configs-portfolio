@@ -1,0 +1,137 @@
+# =============================================================================
+# Mall v4 API - Development Environment
+# =============================================================================
+global:
+  env: dev
+  registry:
+    accountId: "111111111111"
+    region: "ap-northeast-2"
+
+# =============================================================================
+# Application
+# =============================================================================
+fullnameOverride: mall-v4-api-seller
+
+# Namespace (없으면 자동 생성)
+namespace:
+  name: mall
+
+# =============================================================================
+# Image
+# =============================================================================
+image:
+  repository: acmemall-backend-v4/dev/api-seller
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# =============================================================================
+# Service Account
+# =============================================================================
+serviceAccount:
+  create: false
+  name: app-mall
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::111111111111:role/eks-pod-identity-app-mall-v2
+
+# =============================================================================
+# Deployment
+# =============================================================================
+
+priorityClassName: high-priority
+
+podAnnotations:
+  admission.datadoghq.com/java-lib.version: "v1.37.1"
+
+labels:
+  env: dev
+
+# =============================================================================
+# Service
+# =============================================================================
+service:
+  enabled: true
+  type: ClusterIP
+  port: 80
+  targetPort: 8080
+
+# =============================================================================
+# Health Checks
+# =============================================================================
+livenessProbe:
+  enabled: true
+  httpGet:
+    path: /actuator/health/liveness
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 15
+  timeoutSeconds: 1
+  failureThreshold: 3
+  successThreshold: 1
+
+readinessProbe:
+  enabled: true
+  httpGet:
+    path: /actuator/health/readiness
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 15
+  timeoutSeconds: 1
+  failureThreshold: 3
+  successThreshold: 1
+
+startupProbe:
+  enabled: true
+  httpGet:
+    path: /actuator/health/liveness
+    port: http
+  periodSeconds: 10
+  failureThreshold: 30 # 300초 (5분)
+
+# =============================================================================
+# Resources
+# =============================================================================
+resources:
+  limits:
+    memory: 950Mi
+  requests:
+    cpu: 38m # Kubecost 7d avg 26m / 0.7 (limit 제거로 burst 허용)
+    memory: 950Mi
+
+# =============================================================================
+# Autoscaling
+# =============================================================================
+autoscaling:
+  enabled: false
+
+# =============================================================================
+# Environment Variables
+# =============================================================================
+env:
+  - name: DD_TRACE_ENABLED
+    value: "false"
+
+# envFrom:
+#   - secretRef:
+#       name: aws-account
+
+# =============================================================================
+# AWS
+# =============================================================================
+aws:
+  enabled: true
+  region: ap-northeast-2
+
+# =============================================================================
+# Datadog
+# =============================================================================
+datadog:
+  enabled: false
+  version: v4
+  logsInjection: "true"
+  traceSampleRate: "0.1"
+
+# =============================================================================
+# Scheduling
+# =============================================================================
+# 단일 AZ 환경이므로 topologySpread 비활성화
+topologySpreadConstraints: []

@@ -1,0 +1,13 @@
+yamlApplicationConfig:
+  kafka:
+    clusters:
+      - name: "Acme Main Prd"
+        bootstrapServers: "b-1.prdacmemain.voj07r.c2.kafka.ap-northeast-2.amazonaws.com:9092"
+        schemaRegistry: "http://kafka-schema-registry:8081"
+resources:
+  requests:
+    memory: "537Mi"  # Kubecost 7d avg 322.3Mi / 0.6
+    cpu: "10m"       # Kubecost 7d avg 1.2m / 0.6 → min 10m
+  limits:
+    memory: "600Mi"  # request(537Mi) > 기존 limit(512Mi)이므로 상향
+    cpu: "200m"

@@ -1,0 +1,22 @@
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: argo-server-sso
+  namespace: argo
+spec:
+  refreshInterval: "15m"
+  secretStoreRef:
+    name: aws-secrets-store
+    kind: ClusterSecretStore
+  target:
+    name: argo-server-sso
+    creationPolicy: Owner
+  data:
+    - secretKey: client-id
+      remoteRef:
+        key: eks/acme-main-dev
+        property: argo_workflows_sso_client_id
+    - secretKey: client-secret
+      remoteRef:
+        key: eks/acme-main-dev
+        property: argo_workflows_sso_client_secret

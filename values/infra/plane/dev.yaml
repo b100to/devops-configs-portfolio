@@ -1,0 +1,90 @@
+# Plane CE - Dev 환경 (테스트 배포)
+# chart: plane/plane-ce v1.4.1 (app v1.2.0)
+
+ingress:
+  enabled: false  # Traefik IngressRoute 별도 사용
+  # appHost 미사용: chart가 http://로 WEB_URL을 생성해 CSRF 오류 유발. env.web_url/csrf_trusted_origins로 직접 지정.
+
+# chart가 CSRF_TRUSTED_ORIGINS를 지원하지 않아 커스텀 Secret으로 주입
+# 실제 Secret: manifests/plane/dev/app-secrets.yaml
+# doc_store_existingSecret: MINIO_SERVER_URL 추가를 위해 커스텀 Secret 사용
+# 미설정 시 MinIO가 presigned URL 서명 검증 실패 (403) — manifests/plane/dev/doc-store-secrets.yaml 참조
+external_secrets:
+  app_env_existingSecret: "plane-app-secrets-custom"
+  doc_store_existingSecret: "plane-doc-store-custom"
+
+# 로컬 DB/스토리지 사용 (테스트용)
+postgres:
+  local_setup: true
+  storageClass: "gp2"
+  volumeSize: 1Gi
+
+redis:
+  local_setup: true
+  storageClass: "gp2"
+  volumeSize: 100Mi
+
+rabbitmq:
+  local_setup: true
+  storageClass: "gp2"
+  volumeSize: 100Mi
+
+minio:
+  local_setup: true
+  storageClass: "gp2"
+  volumeSize: 1Gi
+  root_user: admin
+  root_password: password  # 테스트 환경 기본값
+
+env:
+  pgdb_username: plane
+  pgdb_password: plane
+  pgdb_name: plane
+  docstore_bucket: uploads
+  # 기본 secret_key (테스트용, 운영 시 변경 필요)
+  secret_key: "REPLACE_ME_PLANE_SECRET_KEY"
+  cors_allowed_origins: "https://plane.dev.acme.example"
+  web_url: "https://plane.dev.acme.example"
+  csrf_trusted_origins: "https://plane.dev.acme.example"
+
+web:
+  replicas: 1
+  cpuRequest: 100m
+  memoryRequest: 256Mi
+  cpuLimit: 500m
+  memoryLimit: 512Mi
+
+space:
+  replicas: 1
+  cpuRequest: 50m
+  memoryRequest: 128Mi
+  cpuLimit: 300m
+  memoryLimit: 256Mi
+
+admin:
+  replicas: 1
+  cpuRequest: 50m
+  memoryRequest: 128Mi
+  cpuLimit: 300m
+  memoryLimit: 256Mi
+
+api:
+  replicas: 1
+  cpuRequest: 100m
+  memoryRequest: 256Mi
+  cpuLimit: 500m
+  memoryLimit: 512Mi
+
+worker:
+  replicas: 1
+  cpuRequest: 50m
+  memoryRequest: 256Mi
+  cpuLimit: 300m
+  memoryLimit: 512Mi  # OOMKilled 반복으로 256Mi → 512Mi 증가
+
+beat_worker:
+  replicas: 1
+  cpuRequest: 50m
+  memoryRequest: 128Mi
+  cpuLimit: 200m
+  memoryLimit: 256Mi

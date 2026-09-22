@@ -1,0 +1,207 @@
+# =============================================================================
+# Mall v3 API - Production Environment
+# =============================================================================
+
+global:
+  env: prd
+  registry:
+    accountId: "222222222222"
+    region: "ap-northeast-2"
+
+# =============================================================================
+# Application
+# =============================================================================
+fullnameOverride: mall-v3-api
+
+# Namespace (없으면 자동 생성)
+namespace:
+  name: mall
+
+# =============================================================================
+# Image
+# =============================================================================
+image:
+  repository: acmemall-backend-prod
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# =============================================================================
+# Service Account
+# =============================================================================
+serviceAccount:
+  create: false
+  name: app-mall
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::222222222222:role/eks-pod-identity-app-mall-v2
+
+# =============================================================================
+# Deployment
+# =============================================================================
+replicaCount: 3
+
+command:
+  - "/bin/bash"
+  - "-c"
+  - "python manage.py create_server_config && \
+    gunicorn acme.wsgi:application \
+    --bind 0.0.0.0:8000 \
+    --worker-class gevent \
+    --workers 3 \
+    --timeout 120 \
+    --reload \
+    --log-level info \
+    --error-logfile -"
+
+podAnnotations:
+  ad.datadoghq.com/acmemall-backend-prd.logs: '[{"source":"django"}]'
+
+labels:
+  env: prd
+
+# =============================================================================
+# Service
+# =============================================================================
+service:
+  enabled: true
+  type: ClusterIP
+  port: 80
+  targetPort: 8000
+
+# =============================================================================
+# Health Checks
+# =============================================================================
+livenessProbe:
+  enabled: true
+  httpGet:
+    path: /ht/
+    port: 8000
+  initialDelaySeconds: 5
+  periodSeconds: 15
+  timeoutSeconds: 3
+  failureThreshold: 3
+  successThreshold: 1
+
+readinessProbe:
+  enabled: true
+  httpGet:
+    path: /ht/
+    port: 8000
+  initialDelaySeconds: 5
+  periodSeconds: 15
+  timeoutSeconds: 3
+  failureThreshold: 3
+  successThreshold: 1
+
+# =============================================================================
+# Resources
+# =============================================================================
+resources:
+  requests:
+    cpu: 141m  # Kubecost 7d avg 84.7m / 0.6
+    memory: 1293Mi  # Kubecost 7d avg 776Mi / 0.6
+  limits:
+    cpu: 2100m
+    memory: 3000Mi
+
+# =============================================================================
+# Autoscaling
+# =============================================================================
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 8
+  targetCPUUtilizationPercentage: 638  # 구 request 600m × 150% = 900m 기준 유지 (600*150/141)
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 30
+      selectPolicy: Max
+      policies:
+        - type: Percent
+          value: 100
+          periodSeconds: 30
+    scaleDown:
+      stabilizationWindowSeconds: 1800
+      selectPolicy: Max
+      policies:
+        - type: Percent
+          value: 50
+          periodSeconds: 1800
+
+# =============================================================================
+# Environment Variables
+# =============================================================================
+env:
+  # Django
+  - name: DJANGO_SETTINGS_MODULE
+    value: acme.settings.prod
+  - name: ACME_ENV
+    value: prod
+  # Redis
+  - name: REDIS_CACHE_URL
+    value: redis://acmemall-prod-cache.abcdef.ng.0001.apn2.cache.amazonaws.com:6379/0
+  - name: CELERY_BROKER_URL
+    value: redis://acmemall-prod-cache.abcdef.ng.0001.apn2.cache.amazonaws.com:6379/2
+  # Datadog
+  # DD_SERVICE, DD_ENV, DD_VERSION, DD_LOGS_INJECTION, DD_TRACE_SAMPLE_RATE, DD_TRACE_AGENT_URL
+  # -> 차트 템플릿(app.datadogEnv)에서 자동 주입됨
+  - name: DD_AGENT_HOST
+    valueFrom:
+      fieldRef:
+        fieldPath: status.hostIP
+  - name: DD_DJANGO_INSTRUMENT_DATABASES
+    value: "false"
+
+# =============================================================================
+# AWS
+# =============================================================================
+aws:
+  enabled: true
+  region: ap-northeast-2
+
+envFrom: []
+
+# =============================================================================
+# Datadog
+# =============================================================================
+datadog:
+  enabled: true
+  version: v3
+  logsInjection: "true"
+  traceSampleRate: "0.1"
+
+
+# =============================================================================
+# Scheduling
+# =============================================================================
+# 노드 분산: zone soft(AZ best-effort) + hostname hard(동일 노드 중복 금지)
+# 차트 default(ScheduleAnyway) 대신 명시적 DoNotSchedule — 한 노드 쏠림 차단 (2026-06-02 사고)
+# nodeTaintsPolicy: Honor — taint 노드를 분산 도메인에서 제외 (3 replica 배치 필수)
+defaultTopologySpread:
+  enabled: false
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: ScheduleAnyway
+    nodeTaintsPolicy: Honor
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: mall-v3-api
+    matchLabelKeys:
+      - pod-template-hash
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: DoNotSchedule
+    nodeTaintsPolicy: Honor
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: mall-v3-api
+    matchLabelKeys:
+      - pod-template-hash
+
+# =============================================================================
+# Pod Disruption Budget
+# =============================================================================
+# descheduler/node drain 등 voluntary eviction 시 최소 1개 replica 보장
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1

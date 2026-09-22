@@ -1,0 +1,208 @@
+# =============================================================================
+# Infrastructure & Tools Routes - Development
+# argocd, grafana, kafka, traefik, company-supply, homepage
+# =============================================================================
+
+---
+# ArgoCD (argocd.dev.acme.example)
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: argocd-server
+  namespace: argocd
+  labels:
+    environment: dev
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`argocd.dev.acme.example`)
+      kind: Rule
+      services:
+        - name: argocd-server
+          port: 80
+      middlewares:
+        - name: company-ip-allowlist
+          namespace: traefik
+
+---
+# Grafana (grafana.dev.acme.example)
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: grafana
+  namespace: monitoring
+  labels:
+    environment: dev
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`grafana.dev.acme.example`)
+      kind: Rule
+      services:
+        - name: grafana
+          port: 80
+      middlewares:
+        - name: company-ip-allowlist
+          namespace: traefik
+
+---
+# Kafka UI (kafka.dev.acme.example)
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: kafka-ui
+  namespace: kafka
+  labels:
+    environment: dev
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`kafka.dev.acme.example`)
+      kind: Rule
+      services:
+        - name: kafka-ui
+          port: 80
+      middlewares:
+        - name: company-ip-allowlist
+          namespace: traefik
+
+---
+# Argo Workflows SSO auto-redirect: unauthenticated root → SSO
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: argo-sso-redirect
+  namespace: argo
+spec:
+  redirectRegex:
+    regex: ".*"
+    replacement: "https://argo-workflows.dev.acme.example/oauth2/redirect?redirect=/"
+    permanent: false
+
+---
+# Argo Workflows (argo-workflows.dev.acme.example)
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: argo-workflows
+  namespace: argo
+  labels:
+    environment: dev
+spec:
+  entryPoints:
+    - web
+  routes:
+    # Authenticated (has authorization cookie): pass through directly
+    - match: Host(`argo-workflows.dev.acme.example`) && HeaderRegexp(`Cookie`, `authorization=`)
+      kind: Rule
+      priority: 20
+      services:
+        - name: argo-workflows-server
+          port: 2746
+      middlewares:
+        - name: company-ip-allowlist
+          namespace: traefik
+    # Unauthenticated root path: auto-redirect to SSO
+    - match: Host(`argo-workflows.dev.acme.example`) && Path(`/`)
+      kind: Rule
+      priority: 15
+      services:
+        - name: argo-workflows-server
+          port: 2746
+      middlewares:
+        - name: company-ip-allowlist
+          namespace: traefik
+        - name: argo-sso-redirect
+          namespace: argo
+    # All other paths (oauth2/*, api/*, assets, etc.)
+    - match: Host(`argo-workflows.dev.acme.example`)
+      kind: Rule
+      priority: 10
+      services:
+        - name: argo-workflows-server
+          port: 2746
+      middlewares:
+        - name: company-ip-allowlist
+          namespace: traefik
+
+---
+# Traefik Dashboard (traefik.dev.acme.example)
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: traefik-dashboard
+  namespace: traefik
+  labels:
+    environment: dev
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`traefik.dev.acme.example`)
+      kind: Rule
+      services:
+        - name: api@internal
+          kind: TraefikService
+      middlewares:
+        - name: company-ip-allowlist
+          namespace: traefik
+
+---
+# Company Items (company-supply.dev.acme.example)
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: company-items
+  namespace: company-items
+  labels:
+    environment: dev
+spec:
+  entryPoints:
+    - web
+  routes:
+    # /api/ -> backend-service
+    - match: Host(`company-supply.dev.acme.example`) && PathPrefix(`/api/`)
+      kind: Rule
+      services:
+        - name: backend-service
+          port: 8080
+      middlewares:
+        - name: company-ip-allowlist
+          namespace: traefik
+      priority: 20
+
+    # / -> frontend-service (catch-all)
+    - match: Host(`company-supply.dev.acme.example`)
+      kind: Rule
+      services:
+        - name: frontend-service
+          port: 80
+      middlewares:
+        - name: company-ip-allowlist
+          namespace: traefik
+      priority: 10
+
+---
+# Homepage (dev.acme-corp.example)
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: homepage
+  namespace: web
+  labels:
+    environment: dev
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`dev.acme-corp.example`)
+      kind: Rule
+      services:
+        - name: homepage
+          port: 80
+      middlewares:
+        - name: company-ip-allowlist
+          namespace: traefik

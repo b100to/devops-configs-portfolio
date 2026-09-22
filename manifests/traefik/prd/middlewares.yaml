@@ -1,0 +1,195 @@
+# =============================================================================
+# Traefik Middlewares - Production
+# =============================================================================
+
+---
+# -----------------------------------------------------------------------------
+# CORS Headers
+# -----------------------------------------------------------------------------
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: cors-headers
+  namespace: traefik
+spec:
+  headers:
+    accessControlAllowMethods:
+      - GET
+      - POST
+      - PUT
+      - DELETE
+      - PATCH
+      - OPTIONS
+    accessControlAllowOriginListRegex:
+      # Production domains (기존 도메인도 허용)
+      - "https://[a-z0-9-]+\\.acme\\.kr"
+      - "https://[a-z0-9-]+\\.acme\\.co\\.kr"
+      - "https://acme\\.co\\.kr"
+      - "https://[a-z0-9-]+\\.acmemall\\.com"
+      - "https://acmemall\\.com"
+      - "https://[a-z0-9-]+\\.smartcoverins\\.co\\.kr"
+      - "https://smartcoverins\\.co\\.kr"
+      # Vercel deployments
+      - "https://[a-z0-9-]+\\.vercel\\.app"
+    accessControlAllowHeaders:
+      - "*"
+      - Authorization
+    accessControlAllowCredentials: true
+    accessControlMaxAge: 86400
+    addVaryHeader: true
+
+---
+# -----------------------------------------------------------------------------
+# IP Allowlist (회사 IP만 허용)
+# -----------------------------------------------------------------------------
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: company-ip-allowlist
+  namespace: traefik
+spec:
+  ipAllowList:
+    sourceRange:
+      - "203.0.113.10/32"    # 회사 IP
+      # GitHub Webhook IPs (https://api.github.com/meta)
+      - "192.30.252.0/22"
+      - "185.199.108.0/22"
+      - "140.82.112.0/20"
+      - "143.55.64.0/20"
+    ipStrategy:
+      depth: 1  # X-Forwarded-For에서 클라이언트 IP 추출 (ALB가 추가한 값)
+
+---
+# -----------------------------------------------------------------------------
+# Rate Limiting (production - stricter limits)
+# -----------------------------------------------------------------------------
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: rate-limit
+  namespace: traefik
+spec:
+  rateLimit:
+    average: 200
+    period: 1s
+    burst: 100
+
+---
+# -----------------------------------------------------------------------------
+# Retry
+# -----------------------------------------------------------------------------
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: retry
+  namespace: traefik
+spec:
+  retry:
+    attempts: 3
+    initialInterval: 100ms
+
+---
+# -----------------------------------------------------------------------------
+# Compress
+# -----------------------------------------------------------------------------
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: compress
+  namespace: traefik
+spec:
+  compress: {}
+
+---
+# -----------------------------------------------------------------------------
+# StripPrefix - Mall namespace
+# -----------------------------------------------------------------------------
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: strip-seller-prefix
+  namespace: mall
+spec:
+  stripPrefix:
+    prefixes:
+      - /seller
+
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: strip-admin-prefix
+  namespace: mall
+spec:
+  stripPrefix:
+    prefixes:
+      - /admin
+
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: strip-mall-prefix
+  namespace: mall
+spec:
+  stripPrefix:
+    prefixes:
+      - /mall
+
+---
+# -----------------------------------------------------------------------------
+# StripPrefix - Venue namespace
+# -----------------------------------------------------------------------------
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: strip-admin-prefix
+  namespace: venue
+spec:
+  stripPrefix:
+    prefixes:
+      - /admin
+
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: strip-h-prefix
+  namespace: venue
+spec:
+  stripPrefix:
+    prefixes:
+      - /h
+
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: strip-partner-prefix
+  namespace: venue
+spec:
+  stripPrefix:
+    prefixes:
+      - /partner
+
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: strip-play-prefix
+  namespace: venue
+spec:
+  stripPrefix:
+    prefixes:
+      - /play
+
+---
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: strip-sc-ins-prefix
+  namespace: venue
+spec:
+  stripPrefix:
+    prefixes:
+      - /sc-ins

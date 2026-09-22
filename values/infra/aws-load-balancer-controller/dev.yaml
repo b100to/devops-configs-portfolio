@@ -1,0 +1,16 @@
+replicaCount: 1
+clusterName: acme-main-dev
+serviceAccount:
+  create: true
+  name: aws-load-balancer-controller
+  annotations:
+    eks.amazonaws.com/role-arn: "arn:aws:iam::111111111111:role/eks-pod-identity-aws-load-balancer-controller-v2"
+region: ap-northeast-2
+vpcId: vpc-0000000000000002
+resources:
+  requests:
+    cpu: 15m
+    memory: 50Mi
+  limits:
+    cpu: 50m
+    memory: 80Mi

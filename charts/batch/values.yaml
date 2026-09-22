@@ -1,0 +1,187 @@
+# =============================================================================
+# Batch CronJob Helm Chart Values
+# =============================================================================
+
+# =============================================================================
+# Common Values (모든 CronJob에 공통 적용)
+# =============================================================================
+commonValues:
+  # Global 설정
+  global:
+    env: dev
+    registry:
+      accountId: "111111111111"
+      region: "ap-northeast-2"
+
+  # 전체 이름 오버라이드
+  fullnameOverride: ""
+
+  # 환경 (global.env 또는 env 사용)
+  env: dev
+
+  # Namespace 설정
+  namespace:
+    name: ""
+    labels: {}
+    annotations: {}
+
+  # =============================================================================
+  # Image Configuration
+  # =============================================================================
+  image:
+    registry: ""
+    repository: ""
+    tag: ""
+    pullPolicy: IfNotPresent
+
+  imagePullSecrets: []
+
+  # =============================================================================
+  # Service Account
+  # =============================================================================
+  serviceAccount:
+    name: ""
+
+  # =============================================================================
+  # Annotations & Labels
+  # =============================================================================
+  annotations: {}
+  
+  podAnnotations: {}
+    # admission.datadoghq.com/java-lib.version: "v1.37.1"
+
+  podLabels: {}
+
+  labels: {}
+
+  # =============================================================================
+  # Priority & Security
+  # =============================================================================
+  priorityClassName: ""
+
+  securityContext: {}
+    # fsGroup: 2000
+
+  containerSecurityContext: {}
+    # capabilities:
+    #   drop:
+    #   - ALL
+
+  # =============================================================================
+  # Init Containers
+  # =============================================================================
+  initContainers: []
+    # - name: init-myservice
+    #   image: busybox
+    #   command: ['sh', '-c', 'echo init']
+
+  # =============================================================================
+  # Resources
+  # =============================================================================
+  resources:
+    requests:
+      cpu: 50m
+      memory: 512Mi
+    limits:
+      memory: 512Mi
+
+  # =============================================================================
+  # Environment Variables
+  # =============================================================================
+  env: []
+    # - name: MY_VAR
+    #   value: my-value
+
+  envFrom: []
+    # - configMapRef:
+    #     name: my-configmap
+
+  # =============================================================================
+  # AWS Configuration
+  # =============================================================================
+  aws:
+    enabled: false
+    region: ap-northeast-2
+    credentials:
+      fromSecret: false
+      secretName: aws-account
+      accessKeyIdKey: AWS_ACCESS_KEY_ID
+      secretAccessKeyKey: AWS_SECRET_ACCESS_KEY
+
+  # =============================================================================
+  # Datadog Configuration
+  # =============================================================================
+  datadog:
+    enabled: false
+    version: ""
+    logsInjection: "true"
+    traceSampleRate: "0.1"
+    traceAgentUrl: unix:///var/run/datadog/apm.socket
+    traceEnabled: "false"  # CronJob은 보통 trace 비활성화
+
+  # =============================================================================
+  # Volumes
+  # =============================================================================
+  volumeMounts: []
+    # - name: config
+    #   mountPath: /etc/config
+
+  volumes: []
+    # - name: config
+    #   configMap:
+    #     name: my-config
+
+  # =============================================================================
+  # Scheduling (Karpenter 통합)
+  # =============================================================================
+
+  # Node Selector - Karpenter NodePool 선택
+  nodeSelector: {}
+    # karpenter.sh/nodepool: mall-v4-batch  # Karpenter NodePool 이름
+    # node-group-type: mall-v4-batch        # 추가 레이블
+
+  # Affinity - 세밀한 스케줄링 제어
+  affinity: {}
+    # nodeAffinity:
+    #   requiredDuringSchedulingIgnoredDuringExecution:
+    #     nodeSelectorTerms:
+    #     - matchExpressions:
+    #       - key: karpenter.sh/nodepool
+    #         operator: In
+    #         values: ["mall-v4-batch"]
+
+  # Tolerations - Karpenter NodePool의 taint 허용
+  tolerations: []
+    # - key: node-group-type
+    #   operator: Equal
+    #   value: mall-v4-batch
+    #   effect: NoSchedule
+
+# =============================================================================
+# Individual CronJobs (각 Job별 설정)
+# =============================================================================
+app:
+  # job-name:
+  #   # CronJob 설정
+  #   schedule: "0 0 * * *"
+  #   timeZone: "Asia/Seoul"
+  #   suspend: false
+  #   
+  #   # Job 설정
+  #   successfulJobsHistoryLimit: 1
+  #   failedJobsHistoryLimit: 1
+  #   concurrencyPolicy: Forbid  # Allow, Forbid, Replace
+  #   backoffLimit: 3
+  #   activeDeadlineSeconds: 3600
+  #   ttlSecondsAfterFinished: 86400
+  #   
+  #   # Pod 설정
+  #   restartPolicy: Never  # Never, OnFailure
+  #   disableIstio: true
+  #   
+  #   # Container 설정
+  #   command:
+  #     - /bin/sh
+  #     - -c
+  #     - echo "Hello World"
+  #   args: []

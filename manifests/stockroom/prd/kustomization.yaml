@@ -1,0 +1,18 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: stockroom
+
+resources:
+  - namespace.yaml
+  - secrets.yaml
+  - configmaps.yaml
+  - backend.yaml
+  - frontend.yaml
+  - hpa.yaml
+
+images:
+  - name: stockroom/backend
+    newTag: latest
+  - name: stockroom/frontend
+    newTag: latest

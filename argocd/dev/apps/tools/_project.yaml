@@ -1,0 +1,16 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: tools
+  namespace: argocd
+spec:
+  description: 사내 도구 서비스 (Plane, Huly 등)
+  sourceRepos:
+    - "*"
+  destinations:
+    - namespace: tools
+      server: https://kubernetes.default.svc
+  clusterResourceWhitelist: []
+  namespaceResourceWhitelist:
+    - group: "*"
+      kind: "*"

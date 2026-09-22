@@ -1,0 +1,64 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: acme-scraper
+  namespace: mall
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: acme-scraper
+  template:
+    metadata:
+      labels:
+        app: acme-scraper
+    spec:
+      serviceAccountName: app-mall
+      containers:
+        # Web Container
+        - name: web
+          image: 111111111111.dkr.ecr.ap-northeast-2.amazonaws.com/acme/scraper:web
+          imagePullPolicy: Always
+          env:
+            - name: ENVIRONMENT
+              value: "dev"
+          ports:
+            - containerPort: 8000
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "100m"
+            limits:
+              memory: "256Mi"
+              cpu: "100m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 5
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 30
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: acme-scraper
+  namespace: mall
+spec:
+  type: ClusterIP
+  selector:
+    app: acme-scraper # 변경된 app 라벨에 맞춤
+  ports:
+    - name: http
+      protocol: TCP
+      port: 8000
+      targetPort: 8000

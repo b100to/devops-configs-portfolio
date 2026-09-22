@@ -1,0 +1,40 @@
+global:
+  security:
+    allowInsecureImages: true
+image:
+  # Bitnami가 2025-08 public.ecr.aws/bitnami 이미지를 삭제 → 노드 교체 시 ImagePullBackOff.
+  # 동일 이미지가 보존된 bitnamilegacy(Docker Hub)로 전환 + 태그 고정.
+  # TODO: upstream registry.k8s.io/external-dns 차트로 마이그레이션
+  registry: docker.io
+  repository: bitnamilegacy/external-dns
+  tag: 0.18.0-debian-12-r4
+
+provider: aws
+aws:
+  region: ap-northeast-2
+serviceAccount:
+  annotations:
+    eks.amazonaws.com/role-arn: "arn:aws:iam::111111111111:role/eks-pod-identity-external-dns-v2"
+
+resources:
+  requests:
+    cpu: 15m
+    memory: 50Mi
+  limits:
+    cpu: 30m
+    memory: 70Mi
+
+domainFilters:
+  - dev.acme.example
+  - dev.acme-corp.example
+
+excludeDomains:
+  - dev.acmemall.example
+  - acme.dev
+  - acmemall.dev
+
+logLevel: error
+
+extraArgs:
+  exclude-record-types: "AAAA" # AAAA 레코드 생성 안 함
+  source: "ingress" # Ingress 리소스 기반으로 도메인 관리

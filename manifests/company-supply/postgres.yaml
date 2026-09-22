@@ -1,0 +1,109 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: company-items
+  labels:
+    app: company-items-postgres
+    app.kubernetes.io/name: company-items-postgres
+    app.kubernetes.io/instance: company-items-postgres
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: company-items-system
+spec:
+  serviceName: postgres-service
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: company-items-postgres
+      app.kubernetes.io/instance: company-items-postgres
+  template:
+    metadata:
+      labels:
+        app: company-items-postgres
+        app.kubernetes.io/name: company-items-postgres
+        app.kubernetes.io/instance: company-items-postgres
+        app.kubernetes.io/component: database
+        app.kubernetes.io/part-of: company-items-system
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:15-alpine
+          ports:
+            - containerPort: 5432
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: POSTGRES_USER
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-secret
+                  key: POSTGRES_PASSWORD
+            - name: POSTGRES_DB
+              value: "company_items"
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - name: postgres-storage
+              mountPath: /var/lib/postgresql/data
+            - name: postgres-init-scripts
+              mountPath: /docker-entrypoint-initdb.d
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - "pg_isready -U admin -d company_items"
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - "pg_isready -U admin -d company_items"
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "250m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+      volumes:
+        - name: postgres-storage
+          persistentVolumeClaim:
+            claimName: postgres-pvc
+        - name: postgres-init-scripts
+          configMap:
+            name: postgres-init-scripts
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-service
+  namespace: company-items
+  labels:
+    app: company-items-postgres
+    app.kubernetes.io/name: company-items-postgres
+    app.kubernetes.io/instance: company-items-postgres
+    app.kubernetes.io/component: database
+    app.kubernetes.io/part-of: company-items-system
+spec:
+  selector:
+    app.kubernetes.io/name: company-items-postgres
+    app.kubernetes.io/instance: company-items-postgres
+  ports:
+    - port: 5432
+      targetPort: 5432
+      protocol: TCP
+  clusterIP: None
+  type: ClusterIP

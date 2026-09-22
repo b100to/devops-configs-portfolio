@@ -1,0 +1,28 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: external-dns
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  sources:
+    - repoURL: https://github.com/AcmeCorp/devops-configs.git
+      targetRevision: main
+      path: .
+      ref: values
+    - repoURL: https://charts.bitnami.com/bitnami
+      chart: external-dns
+      targetRevision: 9.0.3
+      helm:
+        releaseName: external-dns
+        valueFiles:
+          - $values/values/infra/external-dns/prd.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kube-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

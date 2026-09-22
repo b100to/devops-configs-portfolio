@@ -1,0 +1,5 @@
+#!/bin/sh
+. "$(dirname "$0")/_/husky.sh"
+
+# HCL 및 TF 파일에 대해 pre-commit 실행
+git diff --cached --name-only | grep -E '\.hcl$|\.tf$' | xargs -r pre-commit run --files 

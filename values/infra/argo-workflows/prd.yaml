@@ -1,0 +1,82 @@
+# =============================================================================
+# Argo Workflows - Production
+# SSO: Authentik OIDC (https://sso.acme.example/application/o/argo-workflows/)
+# Ingress: Traefik IngressRoute (manifests/traefik/prd/infra.yaml)
+# =============================================================================
+
+controller:
+  workflowDefaults:
+    spec:
+      serviceAccountName: argo-workflow  # batch 네임스페이스 RBAC (manifests/argo-workflows/prd/batch-rbac.yaml)
+      podMetadata:
+        annotations:
+          ad.datadoghq.com/exclude: "true"  # Datadog agent/workflow pod 수집 제외
+
+  resources:
+    requests:
+      cpu: 10m  # Kubecost 7d avg 0.8m / 0.6 → min 10m
+      memory: 32Mi  # Kubecost 7d avg 16.1Mi / 0.6 → min 32Mi
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+
+server:
+  authModes:
+    - sso
+  sso:
+    enabled: true
+    issuer: https://sso.acme.example/application/o/argo-workflows/
+    clientId:
+      name: argo-server-sso
+      key: client-id
+    clientSecret:
+      name: argo-server-sso
+      key: client-secret
+    redirectUrl: https://argo-workflows.acme.example/oauth2/callback
+    scopes:
+      - openid
+      - profile
+      - email
+    sessionExpiry: "10h"
+    rbac:
+      enabled: true  # SSO 사용자는 아래 extraObjects의 argo-workflows-admin SA로 매핑
+  ingress:
+    enabled: false  # Traefik IngressRoute 별도 사용 (manifests/traefik/prd/infra.yaml)
+  resources:
+    requests:
+      cpu: 10m  # Kubecost 7d avg 0.1m / 0.6 → min 10m
+      memory: 32Mi  # Kubecost 7d avg 19.6Mi / 0.6 → min 32Mi
+    limits:
+      cpu: 500m
+      memory: 512Mi
+
+# SSO RBAC: 모든 인증된 SSO 사용자를 admin으로 매핑
+extraObjects:
+  - apiVersion: v1
+    kind: ServiceAccount
+    metadata:
+      name: argo-workflows-admin
+      namespace: argo
+      annotations:
+        workflows.argoproj.io/rbac-rule: "true"  # 모든 SSO 사용자 매칭
+        workflows.argoproj.io/rbac-rule-precedence: "1"
+  - apiVersion: v1
+    kind: Secret
+    metadata:
+      name: argo-workflows-admin.service-account-token
+      namespace: argo
+      annotations:
+        kubernetes.io/service-account.name: argo-workflows-admin
+    type: kubernetes.io/service-account-token
+  - apiVersion: rbac.authorization.k8s.io/v1
+    kind: ClusterRoleBinding
+    metadata:
+      name: argo-workflows-admin-sso
+    roleRef:
+      apiGroup: rbac.authorization.k8s.io
+      kind: ClusterRole
+      name: argo-workflows-admin
+    subjects:
+      - kind: ServiceAccount
+        name: argo-workflows-admin
+        namespace: argo

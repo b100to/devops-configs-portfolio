@@ -1,0 +1,30 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: mall-v4-argo-workflows
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: mall
+  sources:
+    # WorkflowTemplate (batch-template) - 공통 HTTP 템플릿 정의
+    - repoURL: https://github.com/AcmeCorp/acmemall-backend-v4.git
+      targetRevision: dev
+      path: mall/batch/workflows/template
+
+    # CronWorkflow 정의 (dev 환경)
+    - repoURL: https://github.com/AcmeCorp/acmemall-backend-v4.git
+      targetRevision: dev
+      path: mall/batch/workflows/cron-workflows/dev
+
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: batch
+
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

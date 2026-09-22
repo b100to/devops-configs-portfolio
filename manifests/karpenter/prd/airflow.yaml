@@ -1,0 +1,74 @@
+---
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: airflow
+  labels:
+    node-group-type: airflow
+spec:
+  weight: 10
+  template:
+    metadata:
+      labels:
+        node-group-type: airflow
+    spec:
+      expireAfter: 2160h
+      nodeClassRef:
+        group: karpenter.k8s.aws
+        kind: EC2NodeClass
+        name: airflow
+      taints:
+        - key: node-group-type
+          effect: NoSchedule
+          value: airflow
+      requirements:
+        - key: node.kubernetes.io/instance-type
+          operator: In
+          values:
+            - c6i.2xlarge
+#            - r6i.2xlarge
+#            - m6i.2xlarge
+        - key: kubernetes.io/arch
+          operator: In
+          values:
+            - amd64
+        - key: kubernetes.io/os
+          operator: In
+          values:
+            - linux
+        - key: karpenter.sh/capacity-type
+          operator: In
+          values:
+            - on-demand
+  limits:
+    cpu: 8
+  disruption:
+    consolidationPolicy: WhenEmpty
+    consolidateAfter: 10m
+---
+apiVersion: karpenter.k8s.aws/v1
+kind: EC2NodeClass
+metadata:
+  name: airflow
+spec:
+  amiFamily: AL2023
+  role: "arn:aws:iam::222222222222:role/Karpenter-acme-main-v2-prd-20260122051612599200000003"
+  subnetSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: "true"
+  securityGroupSelectorTerms:
+    - tags:
+        karpenter.sh/discovery: acme-main-v2-prd
+  amiSelectorTerms:
+    - alias: al2023@v20260129
+  tags:
+    karpenter.sh/discovery: "true"
+    Name: acme-main-prd-airflow
+    Environment: prd
+  blockDeviceMappings: # 추가
+    - deviceName: /dev/xvda
+      ebs:
+        volumeSize: 30Gi
+        volumeType: gp3
+        encrypted: true
+        kmsKeyID: "alias/aws/ebs"

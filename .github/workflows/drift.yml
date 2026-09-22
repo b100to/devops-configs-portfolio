@@ -1,0 +1,156 @@
+name: Scheduled Terraform Drift Detection
+on:
+  schedule:
+    - cron: "0 2 * * *"
+  workflow_dispatch:
+
+jobs:
+  drift-dev:
+    name: Drift Detection (dev)
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: read
+      checks: read
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Terramate
+        uses: terramate-io/terramate-action@v2
+        with:
+          version: "0.14.7"
+
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.13.5
+          terraform_wrapper: false
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.DEV_AWS_ACCOUNT_ID }}:role/GitHubActions
+          aws-region: ap-northeast-2
+
+      - name: Create AWS named profile for Terraform
+        run: |
+          aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID --profile dev
+          aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY --profile dev
+          aws configure set aws_session_token $AWS_SESSION_TOKEN --profile dev
+          aws configure set region ap-northeast-2 --profile dev
+
+      - name: Setup Terraform Plugin Cache
+        run: |
+          mkdir -p ~/.terraform.d/plugin-cache
+          echo 'plugin_cache_dir = "$HOME/.terraform.d/plugin-cache"' > ~/.terraformrc
+
+      - name: Cache Terraform Providers
+        uses: actions/cache@v4
+        with:
+          path: ~/.terraform.d/plugin-cache
+          key: terraform-providers-dev-${{ hashFiles('**/.terraform.lock.hcl') }}
+          restore-keys: |
+            terraform-providers-dev-
+
+      - name: Initialize Terraform
+        run: |
+          terramate run \
+            --tags=dev \
+            --parallel 1 \
+            -- \
+            terraform init -lock-timeout=5m
+
+      - name: Run drift detection
+        run: |
+          terramate run \
+            --tags=dev \
+            --parallel 5 \
+            --enable-sharing \
+            --mock-on-fail \
+            --continue-on-error \
+            --sync-drift-status \
+            --terraform-plan-file=drift.tfplan \
+            -- \
+            terraform plan -out drift.tfplan -detailed-exitcode -lock=false
+
+  drift-prd:
+    name: Drift Detection (prd)
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+      pull-requests: read
+      checks: read
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Terramate
+        uses: terramate-io/terramate-action@v2
+        with:
+          version: "0.14.7"
+
+      - name: Install Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.13.5
+          terraform_wrapper: false
+
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: arn:aws:iam::${{ secrets.PRD_AWS_ACCOUNT_ID }}:role/GitHubActions
+          aws-region: ap-northeast-2
+
+      - name: Create AWS named profile for Terraform
+        run: |
+          aws configure set aws_access_key_id $AWS_ACCESS_KEY_ID --profile prd
+          aws configure set aws_secret_access_key $AWS_SECRET_ACCESS_KEY --profile prd
+          aws configure set aws_session_token $AWS_SESSION_TOKEN --profile prd
+          aws configure set region ap-northeast-2 --profile prd
+
+      - name: Setup Terraform Plugin Cache
+        run: |
+          mkdir -p ~/.terraform.d/plugin-cache
+          echo 'plugin_cache_dir = "$HOME/.terraform.d/plugin-cache"' > ~/.terraformrc
+
+      - name: Cache Terraform Providers
+        uses: actions/cache@v4
+        with:
+          path: ~/.terraform.d/plugin-cache
+          key: terraform-providers-prd-${{ hashFiles('**/.terraform.lock.hcl') }}
+          restore-keys: |
+            terraform-providers-prd-
+
+      - name: Initialize Terraform
+        run: |
+          terramate run \
+            --tags=prd \
+            --parallel 1 \
+            -- \
+            terraform init -lock-timeout=5m
+
+      - name: Run drift detection
+        run: |
+          terramate run \
+            --tags=prd \
+            --parallel 5 \
+            --enable-sharing \
+            --mock-on-fail \
+            --continue-on-error \
+            --sync-drift-status \
+            --terraform-plan-file=drift.tfplan \
+            -- \
+            terraform plan -out drift.tfplan -detailed-exitcode -lock=false

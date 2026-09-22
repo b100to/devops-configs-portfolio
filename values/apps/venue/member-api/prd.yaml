@@ -1,0 +1,176 @@
+# =============================================================================
+# Venue Member API - Production Environment
+# =============================================================================
+global:
+  env: prd
+  registry:
+    accountId: "222222222222"
+    region: "ap-northeast-2"
+
+# =============================================================================
+# Application
+# =============================================================================
+fullnameOverride: member-api
+
+# Namespace (없으면 자동 생성)
+namespace:
+  name: venue
+
+# =============================================================================
+# Image
+# =============================================================================
+image:
+  repository: micro-member-service-prod
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# =============================================================================
+# Service Account
+# =============================================================================
+serviceAccount:
+  create: false
+  name: app-venue
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::222222222222:role/eks-pod-identity-app-venue-v2
+
+# =============================================================================
+# Deployment
+# =============================================================================
+replicaCount: 2
+
+priorityClassName: high-priority
+
+labels:
+  env: prd
+
+# =============================================================================
+# Service
+# =============================================================================
+service:
+  enabled: true
+  type: ClusterIP
+  port: 80
+  targetPort: 8090
+
+# =============================================================================
+# Health Checks
+# =============================================================================
+startupProbe:
+  enabled: true
+  httpGet:
+    path: /
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 30
+  timeoutSeconds: 10
+  failureThreshold: 10
+  successThreshold: 1
+
+livenessProbe:
+  enabled: true
+  httpGet:
+    path: /
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 30
+  timeoutSeconds: 10
+  failureThreshold: 10
+  successThreshold: 1
+
+readinessProbe:
+  enabled: true
+  httpGet:
+    path: /
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 30
+  timeoutSeconds: 10
+  failureThreshold: 10
+  successThreshold: 1
+
+# =============================================================================
+# Resources
+# =============================================================================
+resources:
+  requests:
+    cpu: 19m  # Kubecost 7d avg 11.6m / 0.6
+    memory: 500Mi
+  limits:
+    memory: 800Mi
+
+# =============================================================================
+# Autoscaling
+# =============================================================================
+autoscaling:
+  enabled: false
+
+# =============================================================================
+# Environment Variables
+# =============================================================================
+env:
+  # Spring
+  - name: SPRING_PROFILES_ACTIVE
+    value: prod
+  - name: DD_TRACE_ENABLED
+    value: "true"
+  - name: DD_TRACING_ENABLED
+    value: "false"
+  # DD_SERVICE, DD_ENV, DD_VERSION, DD_LOGS_INJECTION, DD_TRACE_SAMPLE_RATE, DD_TRACE_AGENT_URL
+  # -> 차트 템플릿(app.datadogEnv)에서 자동 주입됨
+  - name: DD_DOGSTATSD_URL
+    value: unix:///var/run/datadog/dsd.socket
+  - name: DD_PROFILING_ENABLED
+    value: "false"
+  - name: DD_PROFILING_DDPROF_CPU_ENABLED
+    value: "false"
+
+# =============================================================================
+# AWS
+# =============================================================================
+aws:
+  enabled: true
+  region: ap-northeast-2
+
+envFrom: []
+
+# =============================================================================
+# Datadog
+# =============================================================================
+datadog:
+  enabled: true
+
+
+# =============================================================================
+# Scheduling
+# =============================================================================
+# 노드 분산: zone soft + hostname hard(동일 노드 중복 금지) — 2026-06-02 쏠림 다운 재발 방지
+# nodeTaintsPolicy: Honor — taint 노드를 분산 도메인에서 제외
+defaultTopologySpread:
+  enabled: false
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: ScheduleAnyway
+    nodeTaintsPolicy: Honor
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: member-api
+    matchLabelKeys:
+      - pod-template-hash
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: DoNotSchedule
+    nodeTaintsPolicy: Honor
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: member-api
+    matchLabelKeys:
+      - pod-template-hash
+
+# =============================================================================
+# Pod Disruption Budget
+# =============================================================================
+# descheduler/node drain 등 voluntary eviction 시 최소 1개 replica 보장
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1

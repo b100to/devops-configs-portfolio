@@ -1,0 +1,3 @@
+globals {
+  version = "v2"
+}

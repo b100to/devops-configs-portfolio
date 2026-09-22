@@ -1,0 +1,148 @@
+# =============================================================================
+# Venue Play Reco API - Production Environment
+# =============================================================================
+global:
+  env: prd
+  registry:
+    accountId: "222222222222"
+    region: "ap-northeast-2"
+
+# =============================================================================
+# Application
+# =============================================================================
+fullnameOverride: play-reco-api
+
+# Namespace (없으면 자동 생성)
+namespace:
+  name: venue
+
+# =============================================================================
+# Image
+# =============================================================================
+image:
+  repository: play-recommendation-prod
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# =============================================================================
+# Service Account
+# =============================================================================
+serviceAccount:
+  create: false
+  name: app-venue
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::222222222222:role/eks-pod-identity-app-venue-v2
+
+# =============================================================================
+# Deployment
+# =============================================================================
+replicaCount: 1
+
+priorityClassName: medium-high-priority
+
+labels:
+  env: prd
+
+# =============================================================================
+# Service
+# =============================================================================
+service:
+  enabled: true
+  type: ClusterIP
+  port: 80
+  targetPort: 8090
+
+# =============================================================================
+# Health Checks
+# =============================================================================
+startupProbe:
+  enabled: true
+  httpGet:
+    path: /
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 30
+  timeoutSeconds: 10
+  failureThreshold: 10
+  successThreshold: 1
+
+livenessProbe:
+  enabled: true
+  httpGet:
+    path: /
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 30
+  timeoutSeconds: 10
+  failureThreshold: 10
+  successThreshold: 1
+
+readinessProbe:
+  enabled: true
+  httpGet:
+    path: /
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 30
+  timeoutSeconds: 10
+  failureThreshold: 10
+  successThreshold: 1
+
+# =============================================================================
+# Resources
+# =============================================================================
+resources:
+  requests:
+    cpu: 10m  # Kubecost 7d avg 3.4m / 0.6 → min 10m
+    memory: 500Mi
+  limits:
+    memory: 500Mi
+
+# =============================================================================
+# Autoscaling
+# =============================================================================
+autoscaling:
+  enabled: false
+
+# =============================================================================
+# Environment Variables
+# =============================================================================
+env:
+  # Spring
+  - name: SPRING_PROFILES_ACTIVE
+    value: prod
+  - name: DD_TRACING_ENABLED
+    value: "true"
+  - name: DD_TRACE_ENABLED
+    value: "true"
+  # DD_SERVICE, DD_ENV, DD_VERSION, DD_LOGS_INJECTION, DD_TRACE_SAMPLE_RATE, DD_TRACE_AGENT_URL
+  # -> 차트 템플릿(app.datadogEnv)에서 자동 주입됨
+  - name: DD_PROFILING_ENABLED
+    value: "false"
+  - name: DD_PROFILING_DDPROF_CPU_ENABLED
+    value: "false"
+  - name: DD_TRACE_AGENT_PORT
+    value: "8126"
+
+# =============================================================================
+# AWS
+# =============================================================================
+aws:
+  enabled: true
+  region: ap-northeast-2
+
+envFrom: []
+
+# =============================================================================
+# Datadog
+# =============================================================================
+datadog:
+  enabled: true
+
+
+# =============================================================================
+# Scheduling
+# =============================================================================
+# 멀티 AZ 이중화를 위한 topologySpread 활성화
+defaultTopologySpread:
+  enabled: true

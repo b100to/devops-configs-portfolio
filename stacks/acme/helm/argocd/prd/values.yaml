@@ -1,0 +1,103 @@
+# prd
+global:
+  logging:
+    level: info
+
+configs:
+  cm:
+    webhook.github.pathChanged: "true"
+    url: https://argocd.acme.example
+    oidc.config: |
+      name: Authentik
+      issuer: https://sso.acme.example/application/o/argocd/
+      clientID: argocd
+      clientSecret: $argocd-webhook-secret:oidc.authentik.clientSecret
+      requestedScopes:
+        - openid
+        - profile
+        - email
+        - groups
+  rbac:
+    policy.default: role:readonly
+    # main 그룹(전체 개발팀) → admin, authentik Admins → admin
+    policy.csv: |
+      g, main, role:admin
+      g, authentik Admins, role:admin
+    scopes: "[groups, email]"
+  secret:
+    argocdServerAdminPassword: "$2a$10$rRyBsGSHK6.uc8fntPwVIuLVHgsAhAX7TcdrqW/RADU0uh7CaChLa"
+    # 외부 Secret 참조 (argocd-webhook-secret에서 값을 읽어옴)
+    webhook.github.secret: $argocd-webhook-secret:webhook.github.secret
+  params:
+    server.insecure: true
+  # GitHub credentials는 ExternalSecret의 argocd-repo-creds로 관리
+  # repo-creds Secret이 https://github.com/AcmeCorp 패턴 매칭
+controller:
+  extraArgs:
+    - --operation-processors=3
+    - --status-processors=5
+  resources:
+    requests:
+      cpu: 500m
+      # 실측 ~360Mi (49 apps idle). 1Gi request는 스케줄링 낭비라 600Mi로 하향.
+      # limit 2Gi는 sync spike 흡수용으로 유지.
+      memory: 600Mi
+    limits:
+      cpu: 750m
+      memory: 2Gi
+
+applicationSet:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 70Mi
+    limits:
+      cpu: 100m
+      memory: 140Mi
+
+dex:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 100Mi
+    limits:
+      cpu: 100m
+      memory: 120Mi
+
+redis:
+  resources:
+    requests:
+      cpu: 20m
+      memory: 50Mi
+    limits:
+      cpu: 50m
+      memory: 100Mi
+
+repoServer:
+  resources:
+    requests:
+      cpu: 300m
+      memory: 600Mi
+    limits:
+      cpu: 500m
+      # 49 apps + multi-source (mall v4 batch) 매니페스트 동시 생성 시 spike.
+      # 기존 600Mi limit에서 OOMKilled 누적 4회 (2026-05-13~) → 헤드룸 확보.
+      memory: 1500Mi
+
+server:
+  resources:
+    limits:
+      cpu: 200m
+      memory: 200Mi
+    requests:
+      cpu: 85m
+      memory: 100Mi
+
+notifications:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 70Mi
+    limits:
+      cpu: 100m
+      memory: 140Mi

@@ -1,0 +1,199 @@
+# =============================================================================
+# kube-prometheus-stack — prd
+# -----------------------------------------------------------------------------
+# prd 메트릭 수집(Prometheus + Operator + Alertmanager) 도입.
+# 1차 목적: Airflow(airflow / airflow-green) StatsD 메트릭 수집.
+# Grafana는 별도 차트로 이미 운영 중이므로 비활성화.
+# 리소스/보존은 dev보다 상향 (prd 트래픽 고려).
+# =============================================================================
+
+# Grafana 자체는 별도 차트로 운영 중 → 중복 배포 금지
+grafana:
+  enabled: false
+
+# Windows 노드 없음 → 비활성화
+windowsMonitoring:
+  enabled: false
+prometheus-windows-exporter:
+  enabled: false
+
+# -----------------------------------------------------------------------------
+# CRD/Operator
+# -----------------------------------------------------------------------------
+crds:
+  # ArgoCD가 CRD를 직접 관리하도록 함 (ServerSideApply=true 와 함께)
+  enabled: true
+
+prometheusOperator:
+  resources:
+    requests:
+      cpu: 20m
+      memory: 128Mi
+    limits:
+      cpu: 200m
+      memory: 256Mi
+  admissionWebhooks:
+    patch:
+      resources:
+        requests:
+          cpu: 10m
+          memory: 64Mi
+
+# -----------------------------------------------------------------------------
+# Prometheus
+# -----------------------------------------------------------------------------
+prometheus:
+  prometheusSpec:
+    # 모든 namespace의 ServiceMonitor/PodMonitor/PrometheusRule 자동 수집
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+    probeSelectorNilUsesHelmValues: false
+    scrapeConfigSelectorNilUsesHelmValues: false
+
+    # prd 보존 기간: 15일 (PVC 50Gi 대비 여유 있게 45GB 상한)
+    retention: 15d
+    retentionSize: "45GB"
+
+    # Prometheus 자체 리소스 (prd 상향)
+    resources:
+      requests:
+        cpu: 200m
+        memory: 1Gi
+      limits:
+        cpu: 2000m
+        memory: 4Gi
+
+    # PVC (gp3, prd는 50Gi)
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: gp3
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 50Gi
+
+    # 추가 외부 레이블 (다중 클러스터 식별용)
+    externalLabels:
+      cluster: acme-main-v2-prd
+      env: prd
+
+  # ---------------------------------------------------------------------------
+  # Airflow StatsD exporter 스크랩 (ServiceMonitor)
+  # airflow helm chart는 ServiceMonitor를 만들어주지 않으므로 여기서 정의.
+  # statsd-exporter 서비스(<release>-statsd)는 'statsd-scrape'(9102) 포트로
+  # Prometheus 포맷 메트릭을 노출한다.
+  # 레거시 airflow(v2.9.3)는 #286에서 제거됨 → 현재 airflow-green 단일 릴리스만 존재.
+  # ---------------------------------------------------------------------------
+  additionalServiceMonitors:
+    - name: airflow-statsd
+      namespaceSelector:
+        matchNames:
+          - airflow-green
+      selector:
+        matchLabels:
+          tier: airflow
+          component: statsd
+      endpoints:
+        - port: statsd-scrape
+          path: /metrics
+          interval: 30s
+
+# -----------------------------------------------------------------------------
+# Alertmanager
+# -----------------------------------------------------------------------------
+alertmanager:
+  alertmanagerSpec:
+    resources:
+      requests:
+        cpu: 10m
+        memory: 64Mi
+      limits:
+        cpu: 100m
+        memory: 128Mi
+
+    storage:
+      volumeClaimTemplate:
+        spec:
+          storageClassName: gp3
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 5Gi
+
+  # 라우팅/리시버는 AlertmanagerConfig CRD로 별도 관리 (TODO: 후속 PR)
+  # 일단 기본 라우트만 두고 실제 알림은 disabled 상태로 시작
+  config:
+    global:
+      resolve_timeout: 5m
+    route:
+      group_by: ["namespace", "alertname"]
+      group_wait: 30s
+      group_interval: 5m
+      repeat_interval: 4h
+      receiver: "null"
+    receivers:
+      - name: "null"
+    inhibit_rules:
+      - source_matchers:
+          - "severity = critical"
+        target_matchers:
+          - "severity =~ warning|info"
+        equal: ["namespace", "alertname"]
+
+# -----------------------------------------------------------------------------
+# 노드/Pod 메트릭 수집기
+# -----------------------------------------------------------------------------
+nodeExporter:
+  enabled: true
+
+prometheus-node-exporter:
+  resources:
+    requests:
+      cpu: 10m
+      memory: 32Mi
+    limits:
+      cpu: 100m
+      memory: 64Mi
+  # Kubecost가 자체 prometheus-node-exporter를 hostPort 9100 으로 깔아둠.
+  # 포트 충돌(Pending) 회피 위해 9101로 이동 (dev와 동일).
+  service:
+    port: 9101
+    targetPort: 9101
+
+kubeStateMetrics:
+  enabled: true
+
+kube-state-metrics:
+  # Airflow KubernetesExecutor worker pod의 dag_id/task_id를 kube_pod_labels 라벨로 노출.
+  # → cAdvisor 컨테이너 메트릭과 join하여 DAG/task별 메모리·CPU 집계 가능.
+  # allowlist는 네임스페이스 스코프 미지원이나, dag_id/task_id 라벨은 airflow worker pod에만
+  # 존재하므로 결과적으로 airflow pod만 태깅됨. run_id/try_number는 카디널리티 폭발로 제외.
+  metricLabelsAllowlist:
+    - pods=[dag_id,task_id]
+  resources:
+    requests:
+      cpu: 10m
+      memory: 64Mi
+    limits:
+      cpu: 100m
+      memory: 256Mi
+
+# -----------------------------------------------------------------------------
+# 컨트롤 플레인 컴포넌트 (EKS는 마스터 노드 접근 불가 → 일부 비활성화)
+# -----------------------------------------------------------------------------
+kubeApiServer:
+  enabled: true # API server는 in-cluster service 통해 접근 가능
+kubeControllerManager:
+  enabled: false # EKS 마스터 노드 접근 불가
+kubeScheduler:
+  enabled: false # EKS 마스터 노드 접근 불가
+kubeProxy:
+  enabled: true
+kubeEtcd:
+  enabled: false # EKS 관리 영역
+coreDns:
+  enabled: true
+kubelet:
+  enabled: true

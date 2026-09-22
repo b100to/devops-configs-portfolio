@@ -1,0 +1,26 @@
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: kubecost-oauth2-proxy
+  namespace: kubecost
+spec:
+  refreshInterval: "15m"
+  secretStoreRef:
+    name: aws-secrets-store
+    kind: ClusterSecretStore
+  target:
+    name: kubecost-oauth2-proxy
+    creationPolicy: Owner
+  data:
+    - secretKey: client-id
+      remoteRef:
+        key: eks/acme-main-v2-prd
+        property: kubecost_oauth2_client_id
+    - secretKey: client-secret
+      remoteRef:
+        key: eks/acme-main-v2-prd
+        property: kubecost_oauth2_client_secret
+    - secretKey: cookie-secret
+      remoteRef:
+        key: eks/acme-main-v2-prd
+        property: kubecost_oauth2_cookie_secret

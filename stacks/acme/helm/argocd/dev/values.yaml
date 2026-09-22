@@ -1,0 +1,107 @@
+# dev
+global:
+  logging:
+    level: info
+
+configs:
+  cm:
+    webhook.github.pathChanged: "true"
+    url: https://argocd.dev.acme.example
+    oidc.config: |
+      name: Authentik
+      issuer: https://sso.acme.example/application/o/argocd/
+      clientID: argocd
+      clientSecret: $argocd-webhook-secret:oidc.authentik.clientSecret
+      requestedScopes:
+        - openid
+        - profile
+        - email
+        - groups
+    # GoKubeDownscaler: replica 변경을 ArgoCD가 되돌리지 않도록 설정
+    resource.customizations.ignoreDifferences.apps_Deployment: |
+      jqPathExpressions:
+        - .spec.replicas
+    resource.customizations.ignoreDifferences.apps_StatefulSet: |
+      jqPathExpressions:
+        - .spec.replicas
+  rbac:
+    policy.default: role:readonly
+    # main 그룹(전체 개발팀) → admin, authentik Admins → admin
+    policy.csv: |
+      g, main, role:admin
+      g, authentik Admins, role:admin
+    scopes: "[groups, email]"
+  secret:
+    argocdServerAdminPassword: "$2a$10$rRyBsGSHK6.uc8fntPwVIuLVHgsAhAX7TcdrqW/RADU0uh7CaChLa"
+    # 외부 Secret 참조 (argocd-webhook-secret에서 값을 읽어옴)
+    webhook.github.secret: $argocd-webhook-secret:webhook.github.secret
+  params:
+    server.insecure: true
+  # GitHub credentials는 ExternalSecret의 argocd-repo-creds로 관리
+  # repo-creds Secret이 https://github.com/AcmeCorp 패턴 매칭
+
+controller:
+  extraArgs:
+    - --operation-processors=3
+    - --status-processors=5
+  resources:
+    requests:
+      cpu: 100m
+      memory: 600Mi
+    limits:
+      cpu: 500m
+      memory: 1000Mi
+
+applicationSet:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 70Mi
+    limits:
+      cpu: 100m
+      memory: 140Mi
+
+dex:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 100Mi
+    limits:
+      cpu: 100m
+      memory: 120Mi
+
+redis:
+  resources:
+    requests:
+      cpu: 20m
+      memory: 50Mi
+    limits:
+      cpu: 50m
+      memory: 100Mi
+
+repoServer:
+  resources:
+    requests:
+      cpu: 100m
+      memory: 512Mi
+    limits:
+      cpu: 500m
+      memory: 1Gi
+
+server:
+  resources:
+    limits:
+      cpu: 200m
+      memory: 200Mi
+    requests:
+      cpu: 85m
+      memory: 100Mi
+
+notifications:
+  resources:
+    requests:
+      cpu: 50m
+      memory: 70Mi
+    limits:
+      cpu: 100m
+      memory: 140Mi

@@ -1,0 +1,49 @@
+# # batch 사용 중단 - ArgoCD Application 비활성화 (prd)
+# apiVersion: argoproj.io/v1alpha1
+# kind: Application
+# metadata:
+#   name: mall-v4-batch
+#   namespace: argocd
+#   finalizers:
+#     - resources-finalizer.argocd.argoproj.io
+# spec:
+#   project: mall
+#   sources:
+#     # Backend Repo - Job 정의
+#     - repoURL: https://github.com/AcmeCorp/acmemall-backend-v4.git
+#       targetRevision: main
+#       ref: backendRepo
+#
+#     # DevOps Configs Repo
+#     # 예외: 이 앱은 자동 커밋으로 인한 main 브랜치 오염 방지를 위해 예외적으로 mall/v4/batch 브랜치를 사용합니다.
+#     - repoURL: https://github.com/AcmeCorp/devops-configs.git
+#       targetRevision: mall/v4/batch
+#       ref: values
+#
+#     # DevOps Configs Repo - Batch Chart
+#     # 예외: 이 앱은 자동 커밋으로 인한 main 브랜치 오염 방지를 위해 예외적으로 mall/v4/batch 브랜치를 사용합니다.
+#     - repoURL: https://github.com/AcmeCorp/devops-configs.git
+#       targetRevision: mall/v4/batch
+#       path: charts/batch
+#       helm:
+#         releaseName: mall-v4-batch
+#         valueFiles:
+#           # Backend repo의 job 정의 (app: 섹션)
+#           - $backendRepo/mall/batch/helm/prd.yaml
+#           # DevOps repo의 공통 설정 (commonValues)
+#           - $values/manifest/mall/v4/batch/values/prd.yaml
+#
+#   destination:
+#     server: https://kubernetes.default.svc
+#     namespace: mall
+#
+#   syncPolicy:
+#     automated:
+#       prune: true
+#       selfHeal: true
+#
+#   ignoreDifferences:
+#     - group: batch
+#       kind: CronJob
+#       jsonPointers:
+#         - /spec/suspend

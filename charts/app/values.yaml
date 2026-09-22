@@ -1,0 +1,407 @@
+# =============================================================================
+# Global Configuration
+# =============================================================================
+global:
+  # 환경 (dev, prd 등)
+  env: dev
+  # ECR 레지스트리 정보
+  registry:
+    accountId: "111111111111"
+    region: "ap-northeast-2"
+
+# =============================================================================
+# Basic Application Configuration
+# =============================================================================
+
+# 애플리케이션 이름 (기본값: Chart.Name)
+name: ""
+
+# 전체 이름 오버라이드
+fullnameOverride: ""
+
+# 네임스페이스 설정
+namespace:
+  # 네임스페이스 이름 (지정하면 없을 경우 자동 생성)
+  name: ""
+  # 네임스페이스 레이블
+  labels: {}
+  # 네임스페이스 어노테이션
+  annotations: {}
+
+# =============================================================================
+# Image Configuration
+# =============================================================================
+image:
+  # 이미지 레지스트리 (선택사항, global.registry 사용 권장)
+  registry: ""
+  # 이미지 리포지토리
+  repository: ""
+  # 이미지 태그
+  tag: ""
+  # Pull Policy
+  pullPolicy: IfNotPresent
+
+# Image Pull Secrets
+imagePullSecrets: []
+
+# =============================================================================
+# Service Account Configuration
+# =============================================================================
+serviceAccount:
+  # Service Account 생성 여부
+  create: true
+  # Service Account 이름
+  name: ""
+  # Service Account 어노테이션 (예: IAM Role ARN)
+  annotations: {}
+    # eks.amazonaws.com/role-arn: arn:aws:iam::ACCOUNT_ID:role/ROLE_NAME
+
+# =============================================================================
+# Deployment Configuration
+# =============================================================================
+
+# 레플리카 수 (autoscaling이 비활성화된 경우)
+replicaCount: 1
+
+# Revision History 제한
+revisionHistoryLimit: 4
+
+# Deployment 어노테이션
+annotations: {}
+
+# Pod 어노테이션
+podAnnotations: {}
+  # admission.datadoghq.com/java-lib.version: "v1.37.1"
+
+# Pod 레이블
+podLabels: {}
+
+# 추가 레이블
+labels: {}
+
+# Kubernetes 권장 레이블 설정
+# app.kubernetes.io/component: 아키텍처 내 구성요소 (예: database, cache, frontend, backend, api, worker)
+appComponent: ""
+
+# app.kubernetes.io/part-of: 이 애플리케이션이 속한 전체 시스템 이름 (예: wordpress, mall-system, venue-system)
+appPartOf: ""
+
+# Deployment 전략
+strategy: {}
+  # type: RollingUpdate
+  # rollingUpdate:
+  #   maxSurge: 25%
+  #   maxUnavailable: 25%
+
+# Priority Class Name
+priorityClassName: ""
+
+# Pod Security Context
+podSecurityContext: {}
+  # fsGroup: 2000
+
+# Container Security Context
+securityContext: {}
+  # capabilities:
+  #   drop:
+  #   - ALL
+  # readOnlyRootFilesystem: true
+  # runAsNonRoot: true
+  # runAsUser: 1000
+
+# 컨테이너 command
+command: []
+
+# 컨테이너 args
+args: []
+
+# Init Containers
+initContainers: []
+
+# =============================================================================
+# Service Configuration
+# =============================================================================
+service:
+  # Service 생성 여부
+  enabled: true
+  # Service 타입
+  type: ClusterIP
+  # Service 포트
+  port: 8080
+  # Target 포트 (기본값: port와 동일)
+  targetPort: ""
+  # 포트 이름
+  portName: http
+  # 프로토콜
+  protocol: TCP
+  # Service 어노테이션
+  annotations: {}
+  # ClusterIP (type이 ClusterIP인 경우)
+  clusterIP: ""
+  # External IPs
+  externalIPs: []
+  # LoadBalancer IP
+  loadBalancerIP: ""
+  # LoadBalancer Source Ranges
+  loadBalancerSourceRanges: []
+  # Session Affinity
+  sessionAffinity: ""
+  # Session Affinity Config
+  sessionAffinityConfig: {}
+  # NodePort (type이 NodePort나 LoadBalancer인 경우)
+  nodePort: ""
+  # 추가 포트
+  extraPorts: []
+
+# =============================================================================
+# Health Checks
+# =============================================================================
+
+# Liveness Probe
+livenessProbe:
+  enabled: true
+  httpGet:
+    path: /health
+    port: http
+    # scheme: HTTP
+  # tcpSocket:
+  #   port: http
+  # exec:
+  #   command:
+  #   - cat
+  #   - /tmp/healthy
+  initialDelaySeconds: 30
+  periodSeconds: 30
+  timeoutSeconds: 10
+  successThreshold: 1
+  failureThreshold: 3
+
+# Readiness Probe
+readinessProbe:
+  enabled: true
+  httpGet:
+    path: /health
+    port: http
+    # scheme: HTTP
+  # tcpSocket:
+  #   port: http
+  # exec:
+  #   command:
+  #   - cat
+  #   - /tmp/healthy
+  initialDelaySeconds: 30
+  periodSeconds: 30
+  timeoutSeconds: 10
+  successThreshold: 1
+  failureThreshold: 3
+
+# Startup Probe
+startupProbe:
+  enabled: false
+  httpGet:
+    path: /health
+    port: http
+  # tcpSocket:
+  #   port: http
+  # exec:
+  #   command:
+  #   - cat
+  #   - /tmp/healthy
+  initialDelaySeconds: 0
+  periodSeconds: 10
+  timeoutSeconds: 1
+  successThreshold: 1
+  failureThreshold: 60 # 600초: cold start 여유 확보 (앱별 prd.yaml에서 낮출 수 있음)
+
+# =============================================================================
+# Resources
+# =============================================================================
+resources:
+  requests:
+    cpu: 50m
+    memory: 512Mi
+  limits:
+    memory: 512Mi
+
+# =============================================================================
+# Autoscaling
+# =============================================================================
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 80
+  # targetMemoryUtilizationPercentage: 80
+  # behavior:
+  #   scaleDown:
+  #     stabilizationWindowSeconds: 300
+  #     policies:
+  #     - type: Percent
+  #       value: 50
+  #       periodSeconds: 15
+  #   scaleUp:
+  #     stabilizationWindowSeconds: 0
+  #     policies:
+  #     - type: Percent
+  #       value: 100
+  #       periodSeconds: 15
+  #     - type: Pods
+  #       value: 4
+  #       periodSeconds: 15
+  #     selectPolicy: Max
+  # customMetrics: []
+
+# =============================================================================
+# Scheduling
+# =============================================================================
+
+# Node Selector
+nodeSelector: {}
+  # karpenter.sh/nodepool: service
+
+# Affinity
+affinity: {}
+  # nodeAffinity:
+  #   requiredDuringSchedulingIgnoredDuringExecution:
+  #     nodeSelectorTerms:
+  #     - matchExpressions:
+  #       - key: karpenter.sh/nodepool
+  #         operator: In
+  #         values: ["service"]
+  # podAntiAffinity:
+  #   preferredDuringSchedulingIgnoredDuringExecution:
+  #   - weight: 100
+  #     podAffinityTerm:
+  #       labelSelector:
+  #         matchLabels:
+  #           app.kubernetes.io/name: app
+  #       topologyKey: kubernetes.io/hostname
+
+# Tolerations
+tolerations: []
+  # - key: node-group-type
+  #   operator: Equal
+  #   value: service
+  #   effect: NoSchedule
+
+# Topology Spread Constraints (커스텀 설정 시 사용, 비활성화 원하면 [] 명시)
+# 미설정 시 defaultTopologySpread 설정이 적용됨
+# topologySpreadConstraints:
+# - maxSkew: 1
+#   topologyKey: topology.kubernetes.io/zone
+#   whenUnsatisfiable: DoNotSchedule
+#   labelSelector:
+#     matchLabels:
+#       app: my-app
+
+# 기본 Topology Spread 설정 (topologySpreadConstraints가 정의되지 않은 경우에만 적용)
+# 비활성화: defaultTopologySpread.enabled: false 또는 topologySpreadConstraints: [] 명시
+defaultTopologySpread:
+  enabled: true # false로 설정하면 기본 topology spread 비활성화
+  whenUnsatisfiable: DoNotSchedule
+
+# =============================================================================
+# Pod Disruption Budget
+# =============================================================================
+# voluntary eviction(descheduler, node drain 등) 시 최소 가용 replica를 보장
+# minAvailable 또는 maxUnavailable 중 하나만 설정할 것 (둘 다 설정 시 minAvailable 우선 적용됨)
+podDisruptionBudget:
+  enabled: false
+  minAvailable: 1
+  # maxUnavailable: 1
+
+# =============================================================================
+# Environment Variables
+# =============================================================================
+
+# 커스텀 환경 변수
+env: []
+  # - name: SPRING_PROFILES_ACTIVE
+  #   value: dev
+  # - name: MY_SECRET
+  #   valueFrom:
+  #     secretKeyRef:
+  #       name: my-secret
+  #       key: password
+
+# envFrom
+envFrom: []
+  # - configMapRef:
+  #     name: my-configmap
+  # - secretRef:
+  #     name: my-secret
+
+# =============================================================================
+# AWS Configuration
+# =============================================================================
+aws:
+  # AWS 통합 활성화
+  enabled: false
+  # AWS Region
+  region: ap-northeast-2
+  # AWS Credentials (Secret 기반)
+  credentials:
+    fromSecret: false
+    secretName: aws-account
+    accessKeyIdKey: AWS_ACCESS_KEY_ID
+    secretAccessKeyKey: AWS_SECRET_ACCESS_KEY
+
+# =============================================================================
+# Datadog Configuration
+# =============================================================================
+datadog:
+  # Datadog 통합 활성화
+  enabled: false
+  # Datadog 버전 태그 (기본값: image.tag)
+  version: ""
+  # Logs Injection
+  logsInjection: "true"
+  # Trace Sample Rate
+  traceSampleRate: "0.1"
+  # Trace Agent URL
+  traceAgentUrl: unix:///var/run/datadog/apm.socket
+
+# =============================================================================
+# Volumes
+# =============================================================================
+
+# Volume Mounts
+volumeMounts: []
+  # - name: config
+  #   mountPath: /etc/config
+  #   readOnly: true
+
+# Volumes
+volumes: []
+  # - name: config
+  #   configMap:
+  #     name: my-config
+  # - name: secret
+  #   secret:
+  #     secretName: my-secret
+
+# =============================================================================
+# External Secrets
+# =============================================================================
+externalSecret:
+  # External Secret 사용 여부
+  enabled: false
+  # External Secret 목록
+  secrets: []
+    # - name: aws-credentials
+    #   refreshInterval: "15m"
+    #   secretStoreRef:
+    #     name: aws-secrets-store
+    #     kind: ClusterSecretStore
+    #   target:
+    #     name: aws-account
+    #     creationPolicy: Owner
+    #   data:
+    #     - secretKey: AWS_ACCESS_KEY_ID
+    #       remoteRef:
+    #         key: eks/acme-main-dev
+    #         property: AWS_ACCESS_KEY_ID
+    #     - secretKey: AWS_SECRET_ACCESS_KEY
+    #       remoteRef:
+    #         key: eks/acme-main-dev
+    #         property: AWS_SECRET_ACCESS_KEY

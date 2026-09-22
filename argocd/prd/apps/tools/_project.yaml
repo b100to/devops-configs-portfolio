@@ -1,0 +1,20 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: tools
+  namespace: argocd
+spec:
+  description: 사내 내부 도구 (Outline, 기타 tools)
+  sourceRepos:
+    - "*"
+  destinations:
+    - namespace: outline
+      server: https://kubernetes.default.svc
+    - namespace: tools
+      server: https://kubernetes.default.svc
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
+  namespaceResourceWhitelist:
+    - group: "*"
+      kind: "*"

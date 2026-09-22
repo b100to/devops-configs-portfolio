@@ -1,0 +1,148 @@
+# =============================================================================
+# Mall v4 Batch Jobs - Development Environment
+# =============================================================================
+
+commonValues:
+  global:
+    env: dev
+    registry:
+      accountId: "111111111111"
+      region: "ap-northeast-2"
+
+  fullnameOverride: mall-v4-batch
+
+  namespace:
+    name: mall-v4
+
+  # =============================================================================
+  # Image
+  # =============================================================================
+  image:
+    repository: acmemall-backend-v4/dev/batch
+    tag: latest
+    pullPolicy: IfNotPresent
+
+  # =============================================================================
+  # Service Account
+  # =============================================================================
+  serviceAccount:
+    name: app-mall
+
+  # =============================================================================
+  # Pod Configuration
+  # =============================================================================
+  podAnnotations:
+    admission.datadoghq.com/java-lib.version: "v1.37.1"
+
+  # =============================================================================
+  # Resources
+  # =============================================================================
+  resources:
+    requests:
+      cpu: 100m
+      memory: 1Gi
+    limits:
+      memory: 1Gi
+
+  # =============================================================================
+  # Init Containers
+  # =============================================================================
+  initContainers: []
+
+  # =============================================================================
+  # Environment Variables
+  # =============================================================================
+  env: []
+
+  # =============================================================================
+  # AWS
+  # =============================================================================
+  aws:
+    enabled: true
+    region: ap-northeast-2
+    credentials:
+      fromSecret: true
+      secretName: aws-account
+
+  # =============================================================================
+  # Datadog
+  # =============================================================================
+  datadog:
+    enabled: true
+    version: v4
+    logsInjection: "true"
+    traceSampleRate: "0.1"
+    traceEnabled: "false"
+
+  # =============================================================================
+  # Scheduling
+  # =============================================================================
+  nodeSelector:
+    karpenter.sh/nodepool: mall-v4
+
+  tolerations:
+    - key: node-group-type
+      operator: Equal
+      value: mall-v4
+      effect: NoSchedule
+
+# =============================================================================
+# Individual CronJobs
+# =============================================================================
+app:
+  # 매일 오전 2시 실행되는 데이터 정리 Job
+  cleanup-job:
+    schedule: "0 2 * * *"
+    timeZone: "Asia/Seoul"
+    suspend: false
+    successfulJobsHistoryLimit: 1
+    failedJobsHistoryLimit: 3
+    concurrencyPolicy: Forbid
+    backoffLimit: 3
+    activeDeadlineSeconds: 3600
+    ttlSecondsAfterFinished: 86400
+    restartPolicy: Never
+    disableIstio: true
+    command:
+      - java
+      - -jar
+      - app.jar
+      - --job.name=cleanup
+
+  # 매시간 실행되는 통계 집계 Job
+  stats-aggregation:
+    schedule: "0 * * * *"
+    timeZone: "Asia/Seoul"
+    suspend: false
+    successfulJobsHistoryLimit: 1
+    failedJobsHistoryLimit: 3
+    concurrencyPolicy: Forbid
+    backoffLimit: 2
+    activeDeadlineSeconds: 1800
+    ttlSecondsAfterFinished: 43200
+    restartPolicy: Never
+    disableIstio: true
+    command:
+      - java
+      - -jar
+      - app.jar
+      - --job.name=stats-aggregation
+
+  # 매주 월요일 오전 3시 실행되는 주간 리포트 Job
+  weekly-report:
+    schedule: "0 3 * * 1"
+    timeZone: "Asia/Seoul"
+    suspend: false
+    successfulJobsHistoryLimit: 3
+    failedJobsHistoryLimit: 3
+    concurrencyPolicy: Forbid
+    backoffLimit: 1
+    activeDeadlineSeconds: 7200
+    ttlSecondsAfterFinished: 604800
+    restartPolicy: Never
+    disableIstio: true
+    command:
+      - java
+      - -jar
+      - app.jar
+      - --job.name=weekly-report

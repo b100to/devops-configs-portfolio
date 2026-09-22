@@ -1,0 +1,282 @@
+# =============================================================================
+# API Gateway Routes - Development
+# api.dev.acme.example, apiv3.dev.acme.example 라우팅 설정
+# =============================================================================
+
+---
+# /h/* 라우트 (prefix rewrite 필요)
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: api-gateway-h-routes
+  namespace: venue
+  labels:
+    environment: dev
+spec:
+  entryPoints:
+    - web
+  routes:
+    # beacon-api (2026-08-03 cutover revert — services scale-down 예정)
+    - match: (Host(`api.dev.acme.example`) || Host(`apiv3.dev.acme.example`)) && PathPrefix(`/h/admin/registration`)
+      kind: Rule
+      middlewares:
+        - name: strip-h-prefix
+          namespace: venue
+        - name: cors-headers
+          namespace: traefik
+      services:
+        - name: beacon-api
+          port: 80
+      priority: 40
+
+    - match: (Host(`api.dev.acme.example`) || Host(`apiv3.dev.acme.example`)) && PathPrefix(`/h/beacon-api`)
+      kind: Rule
+      middlewares:
+        - name: strip-h-prefix
+          namespace: venue
+        - name: cors-headers
+          namespace: traefik
+      services:
+        - name: beacon-api
+          port: 80
+      priority: 40
+
+    - match: (Host(`api.dev.acme.example`) || Host(`apiv3.dev.acme.example`)) && PathPrefix(`/h/beacon`)
+      kind: Rule
+      middlewares:
+        - name: strip-h-prefix
+          namespace: venue
+        - name: cors-headers
+          namespace: traefik
+      services:
+        - name: beacon-api
+          port: 80
+      priority: 40
+
+    # user-api
+    - match: (Host(`api.dev.acme.example`) || Host(`apiv3.dev.acme.example`)) && PathPrefix(`/h/users/by-token`)
+      kind: Rule
+      middlewares:
+        - name: strip-h-prefix
+          namespace: venue
+        - name: cors-headers
+          namespace: traefik
+      services:
+        - name: user-api
+          port: 80
+      priority: 40
+
+    # member-api — weight 토글: 옛것 100 (member-api=100, services=0) ↔ monolith 100 (반대).
+    - match: (Host(`api.dev.acme.example`) || Host(`apiv3.dev.acme.example`)) && PathPrefix(`/h/member-admin`)
+      kind: Rule
+      middlewares:
+        - name: strip-h-prefix
+          namespace: venue
+        - name: cors-headers
+          namespace: traefik
+      services:
+        - name: member-api
+          port: 80
+          weight: 100
+        - name: services
+          namespace: services
+          port: 80
+          weight: 0
+      priority: 40
+
+    - match: (Host(`api.dev.acme.example`) || Host(`apiv3.dev.acme.example`)) && PathPrefix(`/h/members`)
+      kind: Rule
+      middlewares:
+        - name: strip-h-prefix
+          namespace: venue
+        - name: cors-headers
+          namespace: traefik
+      services:
+        - name: member-api
+          port: 80
+          weight: 100
+        - name: services
+          namespace: services
+          port: 80
+          weight: 0
+      priority: 40
+
+    - match: (Host(`api.dev.acme.example`) || Host(`apiv3.dev.acme.example`)) && PathPrefix(`/h/member`)
+      kind: Rule
+      middlewares:
+        - name: strip-h-prefix
+          namespace: venue
+        - name: cors-headers
+          namespace: traefik
+      services:
+        - name: member-api
+          port: 80
+          weight: 100
+        - name: services
+          namespace: services
+          port: 80
+          weight: 0
+      priority: 40
+
+---
+# 일반 라우트 (prefix rewrite 없음)
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: api-gateway-routes
+  namespace: venue
+  labels:
+    environment: dev
+spec:
+  entryPoints:
+    - web
+  routes:
+    # beacon-api (2026-08-03 cutover revert — services scale-down 예정)
+    - match: (Host(`api.dev.acme.example`) || Host(`apiv3.dev.acme.example`)) && PathPrefix(`/admin/registration`)
+      kind: Rule
+      middlewares:
+        - name: cors-headers
+          namespace: traefik
+      services:
+        - name: beacon-api
+          port: 80
+      priority: 30
+
+    - match: (Host(`api.dev.acme.example`) || Host(`apiv3.dev.acme.example`)) && PathPrefix(`/beacon-api`)
+      kind: Rule
+      middlewares:
+        - name: cors-headers
+          namespace: traefik
+      services:
+        - name: beacon-api
+          port: 80
+      priority: 30
+
+    - match: (Host(`api.dev.acme.example`) || Host(`apiv3.dev.acme.example`)) && PathPrefix(`/beacon`)
+      kind: Rule
+      middlewares:
+        - name: cors-headers
+          namespace: traefik
+      services:
+        - name: beacon-api
+          port: 80
+      priority: 30
+
+    # user-api
+    - match: (Host(`api.dev.acme.example`) || Host(`apiv3.dev.acme.example`)) && PathPrefix(`/users/by-token`)
+      kind: Rule
+      middlewares:
+        - name: cors-headers
+          namespace: traefik
+      services:
+        - name: user-api
+          port: 80
+      priority: 30
+
+    # play-reco-api
+    # priority 35 (> /recommendation 단수 30): /recommendations/* 가 mall 단수 prefix 와
+    # 겹쳐도 항상 이 복수 route 가 우선되도록. (동일 priority 시 Traefik 이 비결정적 분배 → 404 발생)
+    - match: (Host(`api.dev.acme.example`) || Host(`apiv3.dev.acme.example`)) && PathPrefix(`/recommendations`)
+      kind: Rule
+      middlewares:
+        - name: cors-headers
+          namespace: traefik
+      services:
+        - name: play-reco-api
+          port: 80
+      priority: 35
+
+    # mall-reco-api (mall namespace)
+    - match: (Host(`api.dev.acme.example`) || Host(`apiv3.dev.acme.example`)) && PathPrefix(`/recommendation`)
+      kind: Rule
+      middlewares:
+        - name: cors-headers
+          namespace: traefik
+      services:
+        - name: mall-reco-api
+          namespace: mall
+          port: 80
+      priority: 30
+
+    # member-api
+    - match: (Host(`api.dev.acme.example`) || Host(`apiv3.dev.acme.example`)) && PathPrefix(`/member-admin`)
+      kind: Rule
+      middlewares:
+        - name: cors-headers
+          namespace: traefik
+      services:
+        - name: member-api
+          port: 80
+      priority: 30
+
+    - match: (Host(`api.dev.acme.example`) || Host(`apiv3.dev.acme.example`)) && PathPrefix(`/members`)
+      kind: Rule
+      middlewares:
+        - name: cors-headers
+          namespace: traefik
+      services:
+        - name: member-api
+          port: 80
+      priority: 30
+
+    - match: (Host(`api.dev.acme.example`) || Host(`apiv3.dev.acme.example`)) && PathPrefix(`/member`)
+      kind: Rule
+      middlewares:
+        - name: cors-headers
+          namespace: traefik
+      services:
+        - name: member-api
+          port: 80
+      priority: 30
+
+---
+# Prefix Rewrite 라우트 (prefix 완전 제거)
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: api-gateway-rewrite-routes
+  namespace: venue
+  labels:
+    environment: dev
+spec:
+  entryPoints:
+    - web
+  routes:
+    # studio-user-api (partner)
+    - match: (Host(`api.dev.acme.example`) || Host(`apiv3.dev.acme.example`)) && PathPrefix(`/partner`)
+      kind: Rule
+      middlewares:
+        - name: strip-partner-prefix
+          namespace: venue
+        - name: cors-headers
+          namespace: traefik
+      services:
+        - name: studio-user-api
+          port: 80
+      priority: 20
+
+    # play-api
+    - match: (Host(`api.dev.acme.example`) || Host(`apiv3.dev.acme.example`)) && PathPrefix(`/play`)
+      kind: Rule
+      middlewares:
+        - name: strip-play-prefix
+          namespace: venue
+        - name: cors-headers
+          namespace: traefik
+      services:
+        - name: play-api
+          port: 80
+      priority: 20
+
+    # ins-api (sc-ins)
+    - match: (Host(`api.dev.acme.example`) || Host(`apiv3.dev.acme.example`)) && PathPrefix(`/sc-ins`)
+      kind: Rule
+      middlewares:
+        - name: strip-sc-ins-prefix
+          namespace: venue
+        - name: cors-headers
+          namespace: traefik
+      services:
+        - name: ins-api
+          port: 80
+      priority: 20

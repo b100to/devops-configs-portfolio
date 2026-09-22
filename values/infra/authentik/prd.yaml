@@ -1,0 +1,90 @@
+global:
+  env:
+    # ALB → Traefik → Authentik (모두 HTTP) 이므로 프록시 헤더 신뢰 필요
+    - name: AUTHENTIK_LISTEN__TRUSTED_PROXY_CIDRS
+      value: "0.0.0.0/0,::/0"
+  # ExternalSecret으로 생성된 Secret에서 시크릿 주입
+  envFrom:
+    - secretRef:
+        name: authentik-secret
+  # Secret 키 추가 후 Pod 재시작 트리거용
+  podAnnotations:
+    acme.io/authentik-secret-reload: "argocd-grafana-airflow-airflow-green-argo-workflows-kubecost-outline-plane-dev-oidc-non-dev-role-v18"
+
+blueprints:
+  configMaps:
+    - authentik-blueprints
+
+authentik:
+  # secret_key, postgresql.password는 envFrom(authentik-secret)에서 주입
+  error_reporting:
+    enabled: false
+
+server:
+  replicas: 2
+  ingress:
+    enabled: false
+  # 앱 아이콘 self-host: api.iconify.design 핫링크가 브라우저 확장/네트워크 필터에 막혀
+  # /if/user/#/library 아이콘이 안 뜨는 문제 → SVG를 ConfigMap으로 고정해 /media 로 서빙
+  volumes:
+    - name: app-icons
+      configMap:
+        name: authentik-app-icons
+  volumeMounts:
+    - name: app-icons
+      mountPath: /media/public/icons
+      readOnly: true
+  topologySpreadConstraints:
+    # zone: AZ 분산 best-effort (soft)
+    - maxSkew: 1
+      topologyKey: topology.kubernetes.io/zone
+      whenUnsatisfiable: ScheduleAnyway
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/name: authentik
+          app.kubernetes.io/component: server
+      matchLabelKeys:
+        - pod-template-hash
+    # hostname: 동일 노드 중복 배치 금지 (hard) — 노드 메모리 포화 재발 방지 (2026-06-02 사고)
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: DoNotSchedule
+      labelSelector:
+        matchLabels:
+          app.kubernetes.io/name: authentik
+          app.kubernetes.io/component: server
+      matchLabelKeys:
+        - pod-template-hash
+  resources:
+    requests:
+      memory: 757Mi  # Kubecost 7d avg 454.1Mi / 0.6
+      cpu: 36m       # Kubecost 7d avg 21.7m / 0.6
+    limits:
+      memory: 2Gi   # OOM 방지: 실사용 760~858Mi로 1Gi 한도 근접
+      cpu: 1000m    # CPU throttle → readiness probe timeout 원인, 500m→1000m 상향
+
+worker:
+  replicas: 1
+  resources:
+    requests:
+      memory: 701Mi  # Kubecost 7d avg 420.4Mi / 0.6
+      cpu: 64m       # Kubecost 7d avg 38.5m / 0.6
+    limits:
+      memory: 1Gi   # 실사용 412Mi, 여유 확보
+      cpu: 500m     # 250m → 500m 상향
+
+postgresql:
+  enabled: true
+  auth:
+    existingSecret: authentik-secret
+    secretKeys:
+      adminPasswordKey: password
+      userPasswordKey: password
+  primary:
+    resources:
+      requests:
+        memory: 512Mi
+        cpu: 200m
+      limits:
+        memory: 2Gi
+        cpu: 1000m

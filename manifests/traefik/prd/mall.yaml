@@ -1,0 +1,101 @@
+# =============================================================================
+# Mall Services Routes - Production
+# api-v4, apiv3, recommendation-api
+# =============================================================================
+
+---
+# Mall V4 API
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: mall-v4
+  namespace: mall
+  labels:
+    environment: prd
+spec:
+  entryPoints:
+    - web
+  routes:
+    # /seller/ -> mall-v4-api-seller
+    - match: Host(`api-v4.acme.example`) && PathPrefix(`/seller/`)
+      kind: Rule
+      middlewares:
+        - name: strip-seller-prefix
+          namespace: mall
+        - name: cors-headers
+          namespace: traefik
+      services:
+        - name: mall-v4-api-seller
+          port: 80
+      priority: 20
+
+    # /admin/ -> mall-v4-api-admin
+    - match: Host(`api-v4.acme.example`) && PathPrefix(`/admin/`)
+      kind: Rule
+      middlewares:
+        - name: strip-admin-prefix
+          namespace: mall
+        - name: cors-headers
+          namespace: traefik
+      services:
+        - name: mall-v4-api-admin
+          port: 80
+      priority: 20
+
+    # / -> mall-v4-api (catch-all)
+    - match: Host(`api-v4.acme.example`) && PathPrefix(`/`)
+      kind: Rule
+      middlewares:
+        - name: cors-headers
+          namespace: traefik
+      services:
+        - name: mall-v4-api
+          port: 80
+      priority: 10
+
+---
+# Mall V3 API (apiv3/mall/)
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: mall-v3
+  namespace: mall
+  labels:
+    environment: prd
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: (Host(`apiv3.acme.example`) || Host(`api.acmemall.example`)) && PathPrefix(`/mall/`)
+      kind: Rule
+      middlewares:
+        - name: strip-mall-prefix
+          namespace: mall
+        - name: cors-headers
+          namespace: traefik
+      services:
+        - name: mall-v3-api
+          port: 80
+      priority: 20
+
+---
+# Mall Recommendation API
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: mall-reco
+  namespace: mall
+  labels:
+    environment: prd
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`recommendation-api.acme.example`) && PathPrefix(`/recommendation`)
+      kind: Rule
+      middlewares:
+        - name: cors-headers
+          namespace: traefik
+      services:
+        - name: mall-reco-api
+          port: 80

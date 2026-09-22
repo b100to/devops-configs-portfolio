@@ -1,0 +1,199 @@
+# Traefik Helm Chart Values - Development
+# Chart: https://github.com/traefik/traefik-helm-chart
+
+# Deployment 설정
+deployment:
+  enabled: true
+  kind: Deployment
+  replicas: 1
+
+  # Pod annotations
+  podAnnotations: {}
+
+  # Pod labels
+  podLabels:
+    app: traefik
+    environment: dev
+
+# Service 설정
+service:
+  enabled: true
+  type: ClusterIP
+  annotations: {}
+  labels:
+    app: traefik
+    environment: dev
+
+# Ports 정의
+ports:
+  web:
+    port: 8000
+    expose:
+      default: true
+    exposedPort: 80
+    protocol: TCP
+
+  #443 미사용
+  websecure:
+    port: 8443
+    expose:
+      default: false
+    exposedPort: 443
+    protocol: TCP
+    http3:
+      enabled: false
+
+  # Traefik dashboard & API
+  traefik:
+    port: 9000
+    expose:
+      default: true
+    exposedPort: 9000
+    protocol: TCP
+
+  # Health check & metrics
+  metrics:
+    port: 9100
+    expose:
+      default: false
+    exposedPort: 9100
+    protocol: TCP
+
+# IngressRoute CRD 사용
+ingressRoute:
+  dashboard:
+    enabled: false # Production에서는 비활성화
+
+# Providers
+providers:
+  kubernetesCRD:
+    enabled: true
+    allowCrossNamespace: true # 모든 네임스페이스의 IngressRoute 허용
+    allowExternalNameServices: false
+    namespaces: [] # 모든 네임스페이스
+
+  kubernetesIngress:
+    enabled: false # Ingress 리소스는 사용하지 않음
+    publishedService:
+      enabled: false
+
+# Logs
+logs:
+  general:
+    level: INFO
+  access:
+    enabled: true
+    format: json
+    fields:
+      general:
+        defaultmode: keep
+      headers:
+        defaultmode: drop
+
+# Metrics (Prometheus)
+metrics:
+  prometheus:
+    enabled: true
+    entryPoint: metrics
+    addEntryPointsLabels: true
+    addRoutersLabels: true
+    addServicesLabels: true
+
+# Health check
+ping:
+  enabled: true
+  entryPoint: traefik
+
+# Resources
+resources:
+  requests:
+    cpu: 10m # Kubecost 7d avg 2m / 0.7 (min 10m)
+    memory: 128Mi # 기존 32Mi req가 실측 사용량(idle ~20Mi, hot pod ~65Mi)을 못 따라가 HPA(target 80%)가 max 5까지 scale out. hot pod 65Mi 기준 헤드룸 확보(util ~51%)해 플래핑 없이 1~2 pod로 수축. limit 256Mi 유지
+  limits:
+    cpu: 300m
+    memory: 256Mi
+
+# Autoscaling
+autoscaling:
+  enabled: true
+  minReplicas: 1
+  maxReplicas: 5
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 80
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 80
+
+# Pod disruption budget
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+# Security context
+securityContext:
+  capabilities:
+    drop: [ALL]
+  readOnlyRootFilesystem: true
+  runAsGroup: 65532
+  runAsNonRoot: true
+  runAsUser: 65532
+
+podSecurityContext:
+  fsGroup: 65532
+
+# Affinity (노드 분산)
+affinity:
+  podAntiAffinity:
+    preferredDuringSchedulingIgnoredDuringExecution:
+      - weight: 100
+        podAffinityTerm:
+          labelSelector:
+            matchExpressions:
+              - key: app
+                operator: In
+                values:
+                  - traefik
+          topologyKey: kubernetes.io/hostname
+
+# Tolerations
+tolerations: []
+
+# Node selector
+nodeSelector: {}
+
+# Priority class
+priorityClassName: ""
+
+# Additional arguments
+additionalArguments:
+  # ALB에서 TLS 종료하므로 Traefik level에서 리다이렉트 불필요
+  # ALB의 ssl-redirect annotation이 80 -> 443 리다이렉트 처리
+  - "--entrypoints.websecure.http.tls=false"
+
+  # ALB X-Forwarded-For 헤더 신뢰 설정
+  # ALB는 실제 클라이언트 IP를 X-Forwarded-For 헤더에 추가
+  # VPC CIDR(10.0.0.0/16)만 신뢰하여 실제 클라이언트 IP를 사용
+  # insecure=true는 보안상 위험하므로 trustedIPs 사용
+  - "--entryPoints.web.forwardedHeaders.trustedIPs=10.0.0.0/16"
+  - "--entryPoints.websecure.forwardedHeaders.trustedIPs=10.0.0.0/16"
+
+# Environment variables
+env: []
+
+# Volumes
+volumes: []
+
+# Volume mounts
+volumeMounts: []
+
+# Global arguments (Traefik static configuration)
+globalArguments:
+  - "--global.checknewversion"

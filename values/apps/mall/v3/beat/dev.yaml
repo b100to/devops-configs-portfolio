@@ -1,0 +1,120 @@
+# =============================================================================
+# Application
+# =============================================================================
+fullnameOverride: mall-v3-beat
+
+# Namespace (없으면 자동 생성)
+namespace:
+  name: mall
+
+# =============================================================================
+# Image
+# =============================================================================
+image:
+  repository: acmemall-backend-dev
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# =============================================================================
+# Service Account
+# =============================================================================
+serviceAccount:
+  create: false
+  name: app-mall
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::111111111111:role/eks-pod-identity-app-mall-v2
+
+# =============================================================================
+# Deployment
+# =============================================================================
+replicaCount: 0
+
+priorityClassName: low-priority
+
+command:
+  - "/bin/sh"
+  - "-c"
+  - " celery -A acme beat --loglevel=info "
+
+podAnnotations:
+  ad.datadoghq.com/acmemall-backend-dev.logs: '[{"source":"django"}]'
+
+# =============================================================================
+# Service
+# =============================================================================
+service:
+  enabled: true
+  type: ClusterIP
+  port: 80
+  targetPort: 8080
+
+# =============================================================================
+# Health Checks
+# =============================================================================
+livenessProbe:
+  enabled: false
+readinessProbe:
+  enabled: false
+
+# =============================================================================
+# Resources
+# =============================================================================
+resources:
+  requests:
+    cpu: 10m # Kubecost 7d avg 1m / 0.7 (min 10m)
+    memory: 192Mi
+  limits:
+    cpu: 100m
+    memory: 192Mi
+
+# =============================================================================
+# Autoscaling
+# =============================================================================
+autoscaling:
+  enabled: false
+
+# =============================================================================
+# Environment Variables
+# =============================================================================
+env:
+  # AWS
+  - name: AWS_DEFAULT_REGION
+    value: ap-northeast-2
+  # Django
+  - name: DJANGO_SETTINGS_MODULE
+    value: acme.settings.alpha
+  - name: ACME_ENV
+    value: alpha
+  # Redis
+  - name: REDIS_CACHE_URL
+    value: redis://acmemall-alpha-cache-redis.ghijkl.ng.0001.apn2.cache.amazonaws.com:6379/0
+  - name: CELERY_BROKER_URL
+    value: redis://acmemall-alpha-cache-redis.ghijkl.ng.0001.apn2.cache.amazonaws.com:6379/2
+  # Datadog
+  - name: DD_ENV
+    value: dev
+  - name: DD_SERVICE
+    value: mall-backend-scheduler
+  - name: DD_AGENT_HOST
+    valueFrom:
+      fieldRef:
+        fieldPath: status.hostIP
+  - name: DD_VERSION
+    value: "1"
+  - name: DD_DJANGO_INSTRUMENT_DATABASES
+    value: "false"
+
+# =============================================================================
+# AWS
+# =============================================================================
+aws:
+  enabled: false
+envFrom: []
+# =============================================================================
+# Datadog
+# =============================================================================
+datadog:
+  enabled: false
+  version: v3
+  logsInjection: "true"
+  traceSampleRate: "0.1"

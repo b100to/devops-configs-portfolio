@@ -1,0 +1,188 @@
+# =============================================================================
+# Venue Play API - Production Environment
+# =============================================================================
+global:
+  env: prd
+  registry:
+    accountId: "222222222222"
+    region: "ap-northeast-2"
+
+# =============================================================================
+# Application
+# =============================================================================
+fullnameOverride: play-api
+
+# Namespace (없으면 자동 생성)
+namespace:
+  name: venue
+
+# =============================================================================
+# Image
+# =============================================================================
+image:
+  repository: play-service-prod
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# =============================================================================
+# Service Account
+# =============================================================================
+serviceAccount:
+  create: false
+  name: app-venue
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::222222222222:role/eks-pod-identity-app-venue-v2
+
+# =============================================================================
+# Deployment
+# =============================================================================
+replicaCount: 3
+
+priorityClassName: medium-high-priority
+
+labels:
+  env: prd
+  team: "backend"
+  component: "api"
+  project: "venue"
+
+podAnnotations: {}
+
+# =============================================================================
+# Service
+# =============================================================================
+service:
+  enabled: true
+  type: ClusterIP
+  port: 80
+  targetPort: 8081
+
+# =============================================================================
+# Health Checks
+# =============================================================================
+startupProbe:
+  enabled: true
+  httpGet:
+    path: /whoami
+    port: http
+  initialDelaySeconds: 60
+  periodSeconds: 30
+  timeoutSeconds: 20
+  failureThreshold: 20
+  successThreshold: 1
+
+livenessProbe:
+  enabled: true
+  httpGet:
+    path: /whoami
+    port: http
+  initialDelaySeconds: 60
+  periodSeconds: 30
+  timeoutSeconds: 20
+  failureThreshold: 20
+  successThreshold: 1
+
+readinessProbe:
+  enabled: true
+  httpGet:
+    path: /whoami
+    port: http
+  initialDelaySeconds: 60
+  periodSeconds: 30
+  timeoutSeconds: 20
+  failureThreshold: 20
+  successThreshold: 1
+
+# =============================================================================
+# Resources
+# =============================================================================
+resources:
+  requests:
+    cpu: 84m  # Kubecost 7d avg 50.3m / 0.6
+    memory: 2000Mi
+  limits:
+    memory: 2000Mi
+
+# =============================================================================
+# Autoscaling
+# =============================================================================
+autoscaling:
+  enabled: false
+
+# =============================================================================
+# Environment Variables
+# =============================================================================
+env:
+  # Spring
+  - name: SPRING_PROFILES_ACTIVE
+    value: prod
+  - name: JAVA_TOOL_OPTIONS
+    value: "-javaagent:/dd-java-agent.jar"
+  - name: DD_TRACE_ENABLED
+    value: "true"
+  # DD_SERVICE, DD_ENV, DD_VERSION, DD_LOGS_INJECTION, DD_TRACE_SAMPLE_RATE, DD_TRACE_AGENT_URL
+  # -> 차트 템플릿(app.datadogEnv)에서 자동 주입됨
+  # RSS baseline 상승(+약 150MB)으로 limit 2000Mi 주기적 터치 → OOMKilled 30회/22일 (2026-04-10)
+  # 효과 관측 후 충분하면 유지, 부족하면 limit 상향 재검토
+  - name: DD_PROFILING_ENABLED
+    value: "false"
+  - name: DD_RUNTIME_METRICS_ENABLED
+    value: "true"
+  - name: DD_JMXFETCH_ENABLED
+    value: "true"
+
+# =============================================================================
+# AWS
+# =============================================================================
+aws:
+  enabled: true
+  region: ap-northeast-2
+
+envFrom: []
+
+# =============================================================================
+# Datadog
+# =============================================================================
+datadog:
+  enabled: true
+
+# =============================================================================
+# Volumes
+# =============================================================================
+# volumeMounts, volumes -> 차트 템플릿(app.datadogVolumeMounts, app.datadogVolumes)에서 자동 주입됨
+
+
+# =============================================================================
+# Scheduling
+# =============================================================================
+# 노드 분산: zone soft + hostname hard(동일 노드 중복 금지) — 2026-06-02 쏠림 다운 재발 방지
+# nodeTaintsPolicy: Honor — taint 노드를 분산 도메인에서 제외 (3 replica 배치 필수)
+defaultTopologySpread:
+  enabled: false
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: ScheduleAnyway
+    nodeTaintsPolicy: Honor
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: play-api
+    matchLabelKeys:
+      - pod-template-hash
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: DoNotSchedule
+    nodeTaintsPolicy: Honor
+    labelSelector:
+      matchLabels:
+        app.kubernetes.io/name: play-api
+    matchLabelKeys:
+      - pod-template-hash
+
+# =============================================================================
+# Pod Disruption Budget
+# =============================================================================
+# descheduler/node drain 등 voluntary eviction 시 최소 1개 replica 보장
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1

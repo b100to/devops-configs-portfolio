@@ -1,0 +1,291 @@
+# =============================================================================
+# Infrastructure & Tools Routes - Production
+# argocd, grafana, kafka, traefik, homepage, airflow, authentik
+# =============================================================================
+
+---
+# Authentik SSO
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: authentik
+  namespace: authentik
+  labels:
+    environment: prd
+spec:
+  entryPoints:
+    - web
+  routes:
+    # OIDC public endpoints (JWKS, discovery) - AWS STS must access these to verify tokens
+    - match: Host(`sso.acme.example`) && (PathPrefix(`/application/o/aws-cli/jwks`) || PathPrefix(`/application/o/aws-cli/.well-known`))
+      kind: Rule
+      services:
+        - name: authentik-server
+          port: 80
+      priority: 30
+    # OIDC backchannel/public endpoints for ArgoCD/Grafana/Airflow/Argo Workflows
+    # NOTE: token/userinfo are called server-to-server from app pods (not end-user browser IP)
+    - match: Host(`sso.acme.example`) && (PathPrefix(`/application/o/token/`) || Path(`/application/o/token`) || PathPrefix(`/application/o/userinfo/`) || Path(`/application/o/userinfo`) || PathPrefix(`/application/o/argocd/jwks`) || PathPrefix(`/application/o/argocd/.well-known`) || PathPrefix(`/application/o/grafana/jwks`) || PathPrefix(`/application/o/grafana/.well-known`) || PathPrefix(`/application/o/argo-workflows/jwks`) || PathPrefix(`/application/o/argo-workflows/.well-known`) || PathPrefix(`/application/o/kubecost/jwks`) || PathPrefix(`/application/o/kubecost/.well-known`) || PathPrefix(`/application/o/outline/jwks`) || PathPrefix(`/application/o/outline/.well-known`) || PathPrefix(`/application/o/airflow-green/jwks`) || PathPrefix(`/application/o/airflow-green/.well-known`))
+      kind: Rule
+      services:
+        - name: authentik-server
+          port: 80
+      priority: 25
+    # OIDC endpoints - authorize/token accessed from company IP via browser
+    - match: Host(`sso.acme.example`) && PathPrefix(`/application/o/`)
+      kind: Rule
+      services:
+        - name: authentik-server
+          port: 80
+      middlewares:
+        - name: company-ip-allowlist
+          namespace: traefik
+      priority: 20
+    - match: Host(`sso.acme.example`)
+      kind: Rule
+      services:
+        - name: authentik-server
+          port: 80
+      middlewares:
+        - name: company-ip-allowlist
+          namespace: traefik
+
+---
+# ArgoCD
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: argocd-server
+  namespace: argocd
+  labels:
+    environment: prd
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`argocd.acme.example`)
+      kind: Rule
+      services:
+        - name: argocd-server
+          port: 80
+      middlewares:
+        - name: company-ip-allowlist
+          namespace: traefik
+
+---
+# Grafana
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: grafana
+  namespace: monitoring
+  labels:
+    environment: prd
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`grafana.acme.example`)
+      kind: Rule
+      services:
+        - name: grafana
+          port: 80
+      middlewares:
+        - name: company-ip-allowlist
+          namespace: traefik
+
+---
+# Kafka UI
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: kafka-ui
+  namespace: kafka
+  labels:
+    environment: prd
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`kafka.acme.example`)
+      kind: Rule
+      services:
+        - name: kafka-ui
+          port: 80
+      middlewares:
+        - name: company-ip-allowlist
+          namespace: traefik
+
+---
+# Airflow Green
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: airflow-green
+  namespace: airflow-green
+  labels:
+    environment: prd
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`airflow-green.acme.example`)
+      kind: Rule
+      services:
+        - name: airflow-green-api-server
+          port: 8080
+      middlewares:
+        - name: company-ip-allowlist
+          namespace: traefik
+
+---
+# Argo Workflows SSO auto-redirect: unauthenticated root → SSO
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: argo-sso-redirect
+  namespace: argo
+spec:
+  redirectRegex:
+    regex: ".*"
+    replacement: "https://argo-workflows.acme.example/oauth2/redirect?redirect=/"
+    permanent: false
+
+---
+# Argo Workflows
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: argo-workflows
+  namespace: argo
+  labels:
+    environment: prd
+spec:
+  entryPoints:
+    - web
+  routes:
+    # Authenticated (has authorization cookie): pass through directly
+    - match: Host(`argo-workflows.acme.example`) && HeaderRegexp(`Cookie`, `authorization=`)
+      kind: Rule
+      priority: 20
+      services:
+        - name: argo-workflows-server
+          port: 2746
+      middlewares:
+        - name: company-ip-allowlist
+          namespace: traefik
+    # Unauthenticated root path: auto-redirect to SSO
+    - match: Host(`argo-workflows.acme.example`) && Path(`/`)
+      kind: Rule
+      priority: 15
+      services:
+        - name: argo-workflows-server
+          port: 2746
+      middlewares:
+        - name: company-ip-allowlist
+          namespace: traefik
+        - name: argo-sso-redirect
+          namespace: argo
+    # All other paths (oauth2/*, api/*, assets, etc.)
+    - match: Host(`argo-workflows.acme.example`)
+      kind: Rule
+      priority: 10
+      services:
+        - name: argo-workflows-server
+          port: 2746
+      middlewares:
+        - name: company-ip-allowlist
+          namespace: traefik
+
+---
+# Traefik Dashboard
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: traefik-dashboard
+  namespace: traefik
+  labels:
+    environment: prd
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`traefik.acme.example`)
+      kind: Rule
+      services:
+        - name: api@internal
+          kind: TraefikService
+      middlewares:
+        - name: company-ip-allowlist
+          namespace: traefik
+
+---
+# Kubecost (kubecost.acme.example) - SSO via oauth2-proxy (reverse proxy mode)
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: kubecost
+  namespace: kubecost
+  labels:
+    environment: prd
+spec:
+  entryPoints:
+    - web
+  routes:
+    # 모든 트래픽을 oauth2-proxy로 라우팅 (SSO 인증 + kubecost 프록시)
+    - match: Host(`kubecost.acme.example`)
+      kind: Rule
+      services:
+        - name: kubecost-oauth2-proxy
+          port: 4180
+      middlewares:
+        - name: company-ip-allowlist
+          namespace: traefik
+
+---
+# Outline (wiki.acme.example) - 사내 위키
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: outline
+  namespace: outline
+  labels:
+    environment: prd
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`wiki.acme.example`)
+      kind: Rule
+      middlewares:
+        - name: company-ip-allowlist
+          namespace: traefik
+      services:
+        - name: outline
+          port: 80
+
+---
+# Homepage
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: homepage
+  namespace: web
+  labels:
+    environment: prd
+spec:
+  entryPoints:
+    - web
+  routes:
+    - match: Host(`acme-corp.example`)
+      kind: Rule
+      services:
+        - name: homepage
+          port: 80
+          sticky:
+            cookie:
+              name: homepage-sticky
+              httpOnly: true
+      # middlewares:
+      #   - name: company-ip-allowlist
+      #     namespace: traefik

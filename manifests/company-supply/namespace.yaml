@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: company-items
+  labels:
+    name: company-items
+    app: company-items-system
+    version: v1

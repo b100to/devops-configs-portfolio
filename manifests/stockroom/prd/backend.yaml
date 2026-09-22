@@ -1,0 +1,83 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  labels:
+    app: stockroom-backend
+    app.kubernetes.io/name: stockroom-backend
+    app.kubernetes.io/component: backend
+    app.kubernetes.io/part-of: stockroom-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: stockroom-backend
+  template:
+    metadata:
+      labels:
+        app: stockroom-backend
+        app.kubernetes.io/name: stockroom-backend
+        app.kubernetes.io/component: backend
+        app.kubernetes.io/part-of: stockroom-system
+    spec:
+      containers:
+        - name: backend
+          image: 222222222222.dkr.ecr.ap-northeast-2.amazonaws.com/stockroom/backend:latest
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: backend-config
+          env:
+            - name: DB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: backend-secret
+                  key: DB_USER
+            - name: DB_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: backend-secret
+                  key: DB_PASSWORD
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: "50m"
+              memory: "64Mi"
+            limits:
+              cpu: "200m"
+              memory: "256Mi"
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: backend-service
+  labels:
+    app: stockroom-backend
+    app.kubernetes.io/name: stockroom-backend
+    app.kubernetes.io/component: backend
+    app.kubernetes.io/part-of: stockroom-system
+spec:
+  selector:
+    app.kubernetes.io/name: stockroom-backend
+  ports:
+    - port: 8080
+      targetPort: 8080
+      protocol: TCP
+  type: ClusterIP

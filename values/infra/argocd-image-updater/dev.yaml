@@ -1,0 +1,45 @@
+replicaCount: 1
+
+extraEnv:
+  - name: AWS_REGION
+    value: "ap-northeast-2"
+
+extraArgs:
+  - --max-concurrency
+  - "1"
+
+config:
+  argocd:
+    grpcWeb: true
+    serverAddress: "http://argocd.dev.acme.example"
+    insecure: true
+    plaintext: true
+  logLevel: info
+  registries:
+    - name: ECR
+      api_url: https://111111111111.dkr.ecr.ap-northeast-2.amazonaws.com
+      prefix: 111111111111.dkr.ecr.ap-northeast-2.amazonaws.com
+      default: true
+      ping: no
+      insecure: false
+      credentials: ext:/scripts/ecr.sh
+      credsexpire: 11h
+authScripts:
+  enabled: true
+  scripts:
+    ecr.sh: |
+      #!/bin/sh
+      echo "AWS:$(aws ecr get-login-password --region $AWS_REGION)"
+serviceAccount:
+  annotations:
+    eks.amazonaws.com/role-arn: "arn:aws:iam::111111111111:role/eks-pod-identity-argocd-image-updater-v2"
+resources:
+  requests:
+    cpu: 78m # Kubecost 7d avg 54m / 0.7
+    memory: 150Mi
+  limits:
+    cpu: 150m
+    memory: 256Mi # OOMKilled at 150Mi → 256Mi으로 상향
+
+securityContext:
+  readOnlyRootFilesystem: false

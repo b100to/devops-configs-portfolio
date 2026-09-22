@@ -1,0 +1,86 @@
+title SSO Infrastructure on AWS EKS
+
+Users [icon: users]
+
+AWS Edge [icon: aws] {
+  Route53 [icon: aws-route-53]
+  ALB [icon: aws-elb, label: "Application Load Balancer"]
+}
+
+EKS Cluster [icon: aws-eks] {
+  Traefik [icon: server, label: "Traefik Ingress"]
+
+  Identity [color: purple] {
+    Authentik [icon: lock, label: "Authentik IdP (sso.company.com)"]
+  }
+
+  Applications [color: blue] {
+    ArgoCD [icon: argo]
+    Grafana [icon: grafana]
+    Argo Workflows [icon: argo, label: "Argo Workflows"]
+    Airflow [icon: airflow]
+    Cost Monitoring [color: blue] {
+      OAuth2 Proxy [icon: shield, label: "oauth2-proxy"]
+      Kubecost [icon: dollar-sign]
+    }
+  }
+
+  Secrets Management [color: orange] {
+    External Secrets Operator [icon: key, label: "External Secrets Operator"]
+    K8s Secrets [icon: k8s-secret, label: "K8s Secrets"]
+  }
+
+  GitOps [color: green] {
+    ArgoCD Deployer [icon: argo, label: "ArgoCD (GitOps Controller)"]
+  }
+}
+
+AWS Services [icon: aws] {
+  Secrets Manager [icon: aws-secrets-manager]
+  AWS Console Dev [icon: aws-iam, label: "AWS Console (Dev)"]
+  AWS Console Prd [icon: aws-iam, label: "AWS Console (Prd)"]
+  AWS CLI [icon: terminal, label: "AWS CLI (PKCE)"]
+}
+
+Git Repo [icon: github]
+
+// Traffic flow
+Users > Route53
+Route53 > ALB
+ALB > Traefik
+Traefik > ArgoCD
+Traefik > Grafana
+Traefik > Argo Workflows: Route / Auto-redirect
+Traefik > Airflow
+Traefik > OAuth2 Proxy
+OAuth2 Proxy > Kubecost: Proxy
+
+// Authentication flows
+ArgoCD <--> Authentik: OIDC
+Grafana <--> Authentik: Generic OAuth
+Argo Workflows <--> Authentik: OIDC + Traefik Middleware
+Airflow <--> Authentik: Flask OAuth
+OAuth2 Proxy <--> Authentik: OIDC
+
+// AWS authentication
+Authentik --> AWS Console Dev: SAML
+Authentik --> AWS Console Prd: SAML
+Authentik --> AWS CLI: OIDC (public client)
+
+// Secrets flow
+External Secrets Operator <-- Secrets Manager: pull credentials
+External Secrets Operator > K8s Secrets: inject
+K8s Secrets --> ArgoCD
+K8s Secrets --> Argo Workflows
+K8s Secrets --> Airflow
+K8s Secrets --> OAuth2 Proxy
+
+// GitOps deployment
+Git Repo --> ArgoCD Deployer: sync
+ArgoCD Deployer --> Applications: deploy
+
+legend {
+  [connection: ">", label: "Traffic flow"]
+  [connection: "<->", label: "Authentication flow"]
+  [connection: "-->", label: "Async / GitOps sync"]
+}

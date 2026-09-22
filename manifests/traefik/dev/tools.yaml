@@ -1,0 +1,87 @@
+# =============================================================================
+# Tools Routes - Development
+# plane.dev.acme.example
+# =============================================================================
+
+---
+# Plane: X-Forwarded-Proto: https 주입
+# ALB → Traefik 구간에서 헤더가 유실되어 Django가 HTTP 요청으로 인식,
+# Origin(https://)과 scheme 불일치로 CSRF 실패. 이 middleware로 강제 설정.
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: plane-https-header
+  namespace: tools
+spec:
+  headers:
+    customRequestHeaders:
+      X-Forwarded-Proto: "https"
+
+---
+# Plane (plane.dev.acme.example)
+# Helm chart: plane/plane-ce v1.4.1
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: plane
+  namespace: tools
+  labels:
+    environment: dev
+spec:
+  entryPoints:
+    - web
+  routes:
+    # God Mode (어드민 패널)
+    - match: Host(`plane.dev.acme.example`) && PathPrefix(`/god-mode`)
+      kind: Rule
+      priority: 20
+      services:
+        - name: plane-admin
+          port: 3000
+      middlewares:
+        - name: company-ip-allowlist
+          namespace: traefik
+    # API
+    - match: Host(`plane.dev.acme.example`) && PathPrefix(`/api`)
+      kind: Rule
+      priority: 20
+      services:
+        - name: plane-api
+          port: 8000
+      middlewares:
+        - name: company-ip-allowlist
+          namespace: traefik
+        - name: plane-https-header
+          namespace: tools
+    # Auth (로그인/회원가입 - API 백엔드로)
+    - match: Host(`plane.dev.acme.example`) && PathPrefix(`/auth`)
+      kind: Rule
+      priority: 20
+      services:
+        - name: plane-api
+          port: 8000
+      middlewares:
+        - name: company-ip-allowlist
+          namespace: traefik
+        - name: plane-https-header
+          namespace: tools
+    # MinIO (파일 업로드/다운로드)
+    - match: Host(`plane.dev.acme.example`) && PathPrefix(`/uploads`)
+      kind: Rule
+      priority: 20
+      services:
+        - name: plane-minio
+          port: 9000
+      middlewares:
+        - name: company-ip-allowlist
+          namespace: traefik
+    # Web (catch-all)
+    - match: Host(`plane.dev.acme.example`)
+      kind: Rule
+      priority: 10
+      services:
+        - name: plane-web
+          port: 3000
+      middlewares:
+        - name: company-ip-allowlist
+          namespace: traefik

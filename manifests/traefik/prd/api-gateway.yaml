@@ -1,0 +1,265 @@
+# =============================================================================
+# API Gateway Routes - Production
+# api, apiv3, api.acmemall.example 라우팅 설정
+# =============================================================================
+
+---
+# /h/* 라우트 (prefix rewrite 필요)
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: api-gateway-h-routes
+  namespace: venue
+  labels:
+    environment: prd
+spec:
+  entryPoints:
+    - web
+  routes:
+    # beacon-api
+    - match: (Host(`api.acme.example`) || Host(`apiv3.acme.example`) || Host(`api.acmemall.example`)) && PathPrefix(`/h/admin/registration`)
+      kind: Rule
+      middlewares:
+        - name: strip-h-prefix
+          namespace: venue
+        - name: cors-headers
+          namespace: traefik
+      services:
+        - name: beacon-api
+          port: 80
+      priority: 40
+
+    - match: (Host(`api.acme.example`) || Host(`apiv3.acme.example`) || Host(`api.acmemall.example`)) && PathPrefix(`/h/beacon-api`)
+      kind: Rule
+      middlewares:
+        - name: strip-h-prefix
+          namespace: venue
+        - name: cors-headers
+          namespace: traefik
+      services:
+        - name: beacon-api
+          port: 80
+      priority: 40
+
+    - match: (Host(`api.acme.example`) || Host(`apiv3.acme.example`) || Host(`api.acmemall.example`)) && PathPrefix(`/h/beacon`)
+      kind: Rule
+      middlewares:
+        - name: strip-h-prefix
+          namespace: venue
+        - name: cors-headers
+          namespace: traefik
+      services:
+        - name: beacon-api
+          port: 80
+      priority: 40
+
+    # user-api
+    - match: (Host(`api.acme.example`) || Host(`apiv3.acme.example`) || Host(`api.acmemall.example`)) && PathPrefix(`/h/users/by-token`)
+      kind: Rule
+      middlewares:
+        - name: strip-h-prefix
+          namespace: venue
+        - name: cors-headers
+          namespace: traefik
+      services:
+        - name: user-api
+          port: 80
+      priority: 40
+
+    # member-api
+    - match: (Host(`api.acme.example`) || Host(`apiv3.acme.example`) || Host(`api.acmemall.example`)) && PathPrefix(`/h/member-admin`)
+      kind: Rule
+      middlewares:
+        - name: strip-h-prefix
+          namespace: venue
+        - name: cors-headers
+          namespace: traefik
+      services:
+        - name: member-api
+          port: 80
+      priority: 40
+
+    - match: (Host(`api.acme.example`) || Host(`apiv3.acme.example`) || Host(`api.acmemall.example`)) && PathPrefix(`/h/members`)
+      kind: Rule
+      middlewares:
+        - name: strip-h-prefix
+          namespace: venue
+        - name: cors-headers
+          namespace: traefik
+      services:
+        - name: member-api
+          port: 80
+      priority: 40
+
+    - match: (Host(`api.acme.example`) || Host(`apiv3.acme.example`) || Host(`api.acmemall.example`)) && PathPrefix(`/h/member`)
+      kind: Rule
+      middlewares:
+        - name: strip-h-prefix
+          namespace: venue
+        - name: cors-headers
+          namespace: traefik
+      services:
+        - name: member-api
+          port: 80
+      priority: 40
+
+---
+# 일반 라우트 (prefix rewrite 없음)
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: api-gateway-routes
+  namespace: venue
+  labels:
+    environment: prd
+spec:
+  entryPoints:
+    - web
+  routes:
+    # beacon-api
+    - match: (Host(`api.acme.example`) || Host(`apiv3.acme.example`) || Host(`api.acmemall.example`)) && PathPrefix(`/admin/registration`)
+      kind: Rule
+      middlewares:
+        - name: cors-headers
+          namespace: traefik
+      services:
+        - name: beacon-api
+          port: 80
+      priority: 30
+
+    - match: (Host(`api.acme.example`) || Host(`apiv3.acme.example`) || Host(`api.acmemall.example`)) && PathPrefix(`/beacon-api`)
+      kind: Rule
+      middlewares:
+        - name: cors-headers
+          namespace: traefik
+      services:
+        - name: beacon-api
+          port: 80
+      priority: 30
+
+    - match: (Host(`api.acme.example`) || Host(`apiv3.acme.example`) || Host(`api.acmemall.example`)) && PathPrefix(`/beacon`)
+      kind: Rule
+      middlewares:
+        - name: cors-headers
+          namespace: traefik
+      services:
+        - name: beacon-api
+          port: 80
+      priority: 30
+
+    # user-api
+    - match: (Host(`api.acme.example`) || Host(`apiv3.acme.example`) || Host(`api.acmemall.example`)) && PathPrefix(`/users/by-token`)
+      kind: Rule
+      middlewares:
+        - name: cors-headers
+          namespace: traefik
+      services:
+        - name: user-api
+          port: 80
+      priority: 30
+
+    # play-reco-api
+    - match: (Host(`api.acme.example`) || Host(`apiv3.acme.example`) || Host(`api.acmemall.example`)) && PathPrefix(`/recommendations`)
+      kind: Rule
+      middlewares:
+        - name: cors-headers
+          namespace: traefik
+      services:
+        - name: play-reco-api
+          port: 80
+      priority: 30
+
+    # mall-reco-api (mall namespace)
+    - match: (Host(`api.acme.example`) || Host(`apiv3.acme.example`) || Host(`api.acmemall.example`)) && PathPrefix(`/recommendation`)
+      kind: Rule
+      middlewares:
+        - name: cors-headers
+          namespace: traefik
+      services:
+        - name: mall-reco-api
+          namespace: mall
+          port: 80
+      priority: 30
+
+    # member-api
+    - match: (Host(`api.acme.example`) || Host(`apiv3.acme.example`) || Host(`api.acmemall.example`)) && PathPrefix(`/member-admin`)
+      kind: Rule
+      middlewares:
+        - name: cors-headers
+          namespace: traefik
+      services:
+        - name: member-api
+          port: 80
+      priority: 30
+
+    - match: (Host(`api.acme.example`) || Host(`apiv3.acme.example`) || Host(`api.acmemall.example`)) && PathPrefix(`/members`)
+      kind: Rule
+      middlewares:
+        - name: cors-headers
+          namespace: traefik
+      services:
+        - name: member-api
+          port: 80
+      priority: 30
+
+    - match: (Host(`api.acme.example`) || Host(`apiv3.acme.example`) || Host(`api.acmemall.example`)) && PathPrefix(`/member`)
+      kind: Rule
+      middlewares:
+        - name: cors-headers
+          namespace: traefik
+      services:
+        - name: member-api
+          port: 80
+      priority: 30
+
+---
+# Prefix Rewrite 라우트 (prefix 완전 제거)
+apiVersion: traefik.io/v1alpha1
+kind: IngressRoute
+metadata:
+  name: api-gateway-rewrite-routes
+  namespace: venue
+  labels:
+    environment: prd
+spec:
+  entryPoints:
+    - web
+  routes:
+    # studio-user-api (/partner/ -> /)
+    - match: (Host(`api.acme.example`) || Host(`apiv3.acme.example`) || Host(`api.acmemall.example`)) && PathPrefix(`/partner`)
+      kind: Rule
+      middlewares:
+        - name: strip-partner-prefix
+          namespace: venue
+        - name: cors-headers
+          namespace: traefik
+      services:
+        - name: studio-user-api
+          port: 80
+      priority: 20
+
+    # play-api (/play/ -> /)
+    - match: (Host(`api.acme.example`) || Host(`apiv3.acme.example`) || Host(`api.acmemall.example`)) && PathPrefix(`/play`)
+      kind: Rule
+      middlewares:
+        - name: strip-play-prefix
+          namespace: venue
+        - name: cors-headers
+          namespace: traefik
+      services:
+        - name: play-api
+          port: 80
+      priority: 20
+
+    # ins-api (/sc-ins/ -> /)
+    - match: (Host(`api.acme.example`) || Host(`apiv3.acme.example`) || Host(`api.acmemall.example`)) && PathPrefix(`/sc-ins`)
+      kind: Rule
+      middlewares:
+        - name: strip-sc-ins-prefix
+          namespace: venue
+        - name: cors-headers
+          namespace: traefik
+      services:
+        - name: ins-api
+          port: 80
+      priority: 20

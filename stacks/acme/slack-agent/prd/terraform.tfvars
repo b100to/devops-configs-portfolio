@@ -1,0 +1,5 @@
+environment                = "prd"
+account_id                 = "222222222222"
+cluster_name               = "acme-main-v2-prd"
+zai_model                  = "glm-4.5"
+dev_cross_account_role_arn = "arn:aws:iam::111111111111:role/slack-agent-cross-account"

@@ -1,0 +1,146 @@
+# =============================================================================
+# Mall v3 Worker - Development Environment
+# =============================================================================
+
+global:
+  env: dev
+  registry:
+    accountId: "111111111111"
+    region: "ap-northeast-2"
+
+# =============================================================================
+# Application
+# =============================================================================
+fullnameOverride: mall-v3-excel-worker
+
+# Namespace (없으면 자동 생성)
+namespace:
+  name: mall
+
+# =============================================================================
+# Image
+# =============================================================================
+image:
+  repository: acmemall-backend-dev
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# =============================================================================
+# Service Account
+# =============================================================================
+serviceAccount:
+  create: false
+  name: app-mall
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::111111111111:role/eks-pod-identity-app-mall-v2
+
+# =============================================================================
+# Deployment
+# =============================================================================
+replicaCount: 1
+
+priorityClassName: low-priority
+
+terminationGracePeriodSeconds: 300
+
+command:
+  - "/bin/sh"
+  - "-c"
+  - " celery -A acme worker \
+    --loglevel=info \
+    --concurrency=1 \
+    --max-tasks-per-child=20 \
+    -O fair \
+    -Q excel-export"
+
+podAnnotations:
+  ad.datadoghq.com/acmemall-backend-dev.logs: '[{"source":"django"}]'
+
+# =============================================================================
+# Service
+# =============================================================================
+service:
+  enabled: true
+  type: ClusterIP
+  port: 80
+  targetPort: 8080
+
+# =============================================================================
+# Health Checks
+# =============================================================================
+livenessProbe:
+  enabled: false
+
+readinessProbe:
+  enabled: false
+
+# =============================================================================
+# Resources
+# =============================================================================
+resources:
+  requests:
+    cpu: 10m # Kubecost 7d avg 2m / 0.7 (min 10m)
+    memory: 216Mi
+  limits:
+    cpu: 30m
+    memory: 512Mi # 엑셀 export 작업 중 메모리 부족 방지를 위해 상향
+
+# =============================================================================
+# Autoscaling
+# =============================================================================
+autoscaling:
+  enabled: false
+
+# =============================================================================
+# Environment Variables
+# =============================================================================
+env:
+  # AWS
+  - name: AWS_DEFAULT_REGION
+    value: ap-northeast-2
+  # Django
+  - name: DJANGO_SETTINGS_MODULE
+    value: acme.settings.alpha
+  - name: ACME_ENV
+    value: alpha
+  # Redis
+  - name: REDIS_CACHE_URL
+    value: redis://acmemall-alpha-cache-redis.ghijkl.ng.0001.apn2.cache.amazonaws.com:6379/0
+  - name: CELERY_BROKER_URL
+    value: redis://acmemall-alpha-cache-redis.ghijkl.ng.0001.apn2.cache.amazonaws.com:6379/2
+  # Datadog
+  - name: DD_ENV
+    value: dev
+  - name: DD_SERVICE
+    value: mall-backend-worker-excel
+  - name: DD_AGENT_HOST
+    valueFrom:
+      fieldRef:
+        fieldPath: status.hostIP
+  - name: DD_VERSION
+    value: "1"
+  - name: DD_DJANGO_INSTRUMENT_DATABASES
+    value: "false"
+
+# =============================================================================
+# AWS
+# =============================================================================
+aws:
+  enabled: false
+
+envFrom: []
+
+# =============================================================================
+# Datadog
+# =============================================================================
+datadog:
+  enabled: false
+  version: v3
+  logsInjection: "true"
+  traceSampleRate: "0.1"
+
+# =============================================================================
+# Scheduling
+# =============================================================================
+# 단일 AZ 환경이므로 topologySpread 비활성화
+topologySpreadConstraints: []

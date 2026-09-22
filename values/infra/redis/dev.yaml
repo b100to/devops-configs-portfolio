@@ -1,0 +1,27 @@
+#https://artifacthub.io/packages/helm/bitnami/redis
+global:
+  security:
+    allowInsecureImages: true
+image:
+  # Bitnami가 2025-08 public.ecr.aws/bitnami 이미지를 삭제 → 노드 교체 시 ImagePullBackOff.
+  # bitnamilegacy(Docker Hub)로 전환. chart 23.2.2(redis 8.2.x)에 맞춰 태그 고정(기존 latest 제거).
+  registry: docker.io
+  repository: bitnamilegacy/redis
+  tag: 8.2.1-debian-12-r0
+auth:
+  enabled: false
+  sentinel: false
+
+master:
+  persistence:
+    enabled: false
+  resources:
+    requests:
+      memory: "32Mi" # Kubecost 7d avg 1Mi / 0.7 (min 32Mi)
+      cpu: "16m" # Kubecost 7d avg 11m / 0.7
+    limits:
+      memory: "256Mi"
+      cpu: "200m"
+
+replica:
+  replicaCount: 0

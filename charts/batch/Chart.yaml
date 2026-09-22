@@ -1,0 +1,6 @@
+apiVersion: v2
+name: batch
+description: A unified Helm chart for CronJob workloads
+type: application
+version: 1.0.0
+appVersion: "1.0.0"

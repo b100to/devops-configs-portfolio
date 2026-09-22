@@ -1,0 +1,25 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: acme-scraper
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: mall
+  source:
+    repoURL: https://github.com/AcmeCorp/devops-configs.git
+    targetRevision: main
+    path: ./manifests/acme-scraper/dev
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: mall
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas

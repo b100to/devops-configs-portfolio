@@ -1,0 +1,18 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: mall
+  namespace: argocd
+spec:
+  description: 아크메몰 관련 서비스
+  sourceRepos:
+    - "*"
+  destinations:
+    - namespace: mall
+      server: https://kubernetes.default.svc
+    - namespace: batch
+      server: https://kubernetes.default.svc
+  clusterResourceWhitelist: []
+  namespaceResourceWhitelist:
+    - group: "*"
+      kind: "*"

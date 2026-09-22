@@ -1,0 +1,34 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: traefik
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  sources:
+    - repoURL: https://github.com/AcmeCorp/devops-configs.git
+      targetRevision: main # 또는 main
+      ref: values
+    - repoURL: https://traefik.github.io/charts
+      chart: traefik
+      targetRevision: 38.0.0
+      helm:
+        releaseName: traefik
+        valueFiles:
+          - $values/values/infra/traefik/prd.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: traefik
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true
+  info:
+    - name: Description
+      value: "Traefik Ingress Controller for Production"
+    - name: Deployment Order
+      value: "1/3 - Deploy first"

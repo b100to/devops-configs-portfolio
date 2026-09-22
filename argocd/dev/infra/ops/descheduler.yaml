@@ -1,0 +1,30 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: descheduler
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  sources:
+    - repoURL: https://github.com/AcmeCorp/devops-configs.git
+      targetRevision: main
+      ref: values
+    - repoURL: https://kubernetes-sigs.github.io/descheduler/
+      chart: descheduler
+      targetRevision: 0.36.0
+      helm:
+        releaseName: descheduler
+        valueFiles:
+          - $values/values/infra/descheduler/dev.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kube-system
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+  info:
+    - name: Description
+      value: "Descheduler - rebalance pods violating topology spread constraints after node recovery (dev)"

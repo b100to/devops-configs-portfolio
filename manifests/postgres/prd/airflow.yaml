@@ -1,0 +1,74 @@
+# Airflow PostgreSQL Proxy
+# Airflow 메타데이터 DB(aurora-postgresql, 5432)용 socat 프록시.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: airflow-pg-proxy
+  namespace: default
+  labels:
+    app: airflow-pg-proxy
+    service: airflow
+    component: pg-proxy
+spec:
+  serviceName: airflow-pg-service
+  replicas: 1
+  selector:
+    matchLabels:
+      app: airflow-pg-proxy
+  template:
+    metadata:
+      labels:
+        app: airflow-pg-proxy
+        service: airflow
+        component: pg-proxy
+    spec:
+      containers:
+        - name: pg-proxy
+          image: alpine/socat
+          command:
+            - socat
+            - TCP-LISTEN:5432,fork,reuseaddr
+            - TCP:airflow-db.acme.example:5432
+          ports:
+            - containerPort: 5432
+              name: postgres
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+          securityContext:
+            runAsUser: 0
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+              add:
+                - NET_BIND_SERVICE
+      tolerations:
+        - key: "node-group-type"
+          operator: "Equal"
+          value: "base"
+          effect: "NoSchedule"
+
+---
+# Airflow PostgreSQL Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: airflow-pg-service
+  namespace: default
+  labels:
+    app: airflow-pg-proxy
+    service: airflow
+spec:
+  selector:
+    app: airflow-pg-proxy
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: 5432
+      protocol: TCP
+  type: ClusterIP

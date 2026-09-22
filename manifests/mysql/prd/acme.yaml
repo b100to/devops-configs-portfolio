@@ -1,0 +1,75 @@
+# Acme (acme-aurora) MySQL Proxy
+# 타겟은 stable CNAME(acme-db.acme.example → acme-aurora RDS). RDS 엔드포인트 변경 시 Route53만 갱신.
+# 주의: acme-aurora 클러스터는 현재 인스턴스 0개(휴면, 백업 볼륨). 인스턴스 기동 시 자동으로 접속 가능.
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: acme-mysql-proxy
+  namespace: default
+  labels:
+    app: acme-mysql-proxy
+    service: acme
+    component: mysql-proxy
+spec:
+  serviceName: acme-mysql-service
+  replicas: 1
+  selector:
+    matchLabels:
+      app: acme-mysql-proxy
+  template:
+    metadata:
+      labels:
+        app: acme-mysql-proxy
+        service: acme
+        component: mysql-proxy
+    spec:
+      containers:
+        - name: mysql-proxy
+          image: alpine/socat
+          command:
+            - socat
+            - TCP-LISTEN:3306,fork,reuseaddr
+            - TCP:acme-db.acme.example:3306
+          ports:
+            - containerPort: 3306
+              name: mysql
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "100m"
+          securityContext:
+            runAsUser: 0
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop:
+                - ALL
+              add:
+                - NET_BIND_SERVICE
+      tolerations:
+        - key: "node-group-type"
+          operator: "Equal"
+          value: "base"
+          effect: "NoSchedule"
+
+---
+# Acme MySQL Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: acme-mysql-service
+  namespace: default
+  labels:
+    app: acme-mysql-proxy
+    service: acme
+spec:
+  selector:
+    app: acme-mysql-proxy
+  ports:
+    - name: mysql
+      port: 3306
+      targetPort: 3306
+      protocol: TCP
+  type: ClusterIP

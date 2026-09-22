@@ -1,0 +1,28 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: outline
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+  annotations:
+    argocd-image-updater.argoproj.io/image-list: app=outlinewiki/outline
+    argocd-image-updater.argoproj.io/app.update-strategy: latest
+    argocd-image-updater.argoproj.io/write-back-method: argocd
+spec:
+  project: tools
+  source:
+    repoURL: https://github.com/AcmeCorp/devops-configs.git
+    targetRevision: main
+    path: ./manifests/outline/prd
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: outline
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      # PVC(outline-data) prune 이 deployment 업데이트보다 먼저 실행되면 pod가 PVC를 마운트 중이라 deletion 이 block 되어 sync deadlock 발생.
+      # Deployment 업데이트로 PVC 참조가 제거된 후 PVC 를 prune 하도록 PruneLast 활성화.
+      - PruneLast=true

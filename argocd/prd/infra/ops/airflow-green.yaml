@@ -1,0 +1,30 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: airflow-green
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  sources:
+    - repoURL: https://airflow.apache.org/
+      chart: airflow
+      targetRevision: 1.22.0
+      helm:
+        releaseName: airflow-green
+        valueFiles:
+          - $values/values/infra/airflow/prd-green.yaml
+    - repoURL: https://github.com/AcmeCorp/devops-configs.git
+      targetRevision: main
+      path: .
+      ref: values
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: airflow-green
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=true

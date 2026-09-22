@@ -1,0 +1,84 @@
+# OS Files
+.DS_Store
+.history
+
+# Editor Files
+## IntelliJ IDEA
+.idea
+
+# Terraform
+## Local .terraform directories
+.terraform
+**/.terraform/*
+.terraform.lock.hcl
+.terraform-cache-dir/
+
+## Terraform state files
+*.tfstate.backup
+
+## Terraform variable files
+# example.tfvars
+
+## Override files
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+# !example_override.tf
+
+## Plan output files
+*.tfplan
+
+## Lambda zip archives
+lambda.zip
+
+## Terraform logs
+crash.log
+
+# Visualization and Reports
+**/graph.svg
+**/.pluralith/
+**/pluralith.yml
+**/.infracost/*
+**/infracost-usage.yml
+pr-comment.txt
+
+# Helm (chart cache는 CI에서 필요하므로 추적)
+# 새 chart 버전 추가 시 기존 .tgz 삭제 후 새 버전 커밋
+
+# Secrets
+*.key
+*.pem
+# Encrypted secrets are allowed
+!secrets/*
+
+# Claude Code worktrees
+.claude/worktrees/
+
+# Google Service Account Keys
+.claude/skills/weekly-report/references/*.json
+
+# Node.js
+node_modules/
+dist/
+
+# Python
+.venv/
+__pycache__/
+
+/stacks/**
+# Stockroom
+apps/stockroom/backend/main
+apps/stockroom/backend/.env
+apps/stockroom/frontend/.env.local
+
+# Local secrets (repo root)
+/.env
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# Agent skill local credentials (GCP SA key, spreadsheet config)
+.agents/skills/weekly-report/references/

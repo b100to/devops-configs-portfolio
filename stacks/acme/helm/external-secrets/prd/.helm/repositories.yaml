@@ -1,0 +1,5 @@
+apiVersion: ""
+generated: "0001-01-01T00:00:00Z"
+repositories:
+  - name: external-secrets
+    url: https://charts.external-secrets.io

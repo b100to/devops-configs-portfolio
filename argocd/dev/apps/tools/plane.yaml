@@ -1,0 +1,48 @@
+# Plane (dev) — 미사용으로 비활성화 (2026-05-14)
+# 다시 띄우려면 아래 블록의 주석을 해제하고 SSO 블록(authentik/prd/blueprints.yaml)도 함께 복원.
+# Application CR이 git에서 사라지면 finalizer가 cascade prune → plane 네임스페이스 리소스 + PVC(EBS) 전부 제거됨.
+#
+# apiVersion: argoproj.io/v1alpha1
+# kind: Application
+# metadata:
+#   name: plane
+#   namespace: argocd
+#   finalizers:
+#     - resources-finalizer.argocd.argoproj.io
+# spec:
+#   project: tools
+#   sources:
+#     - repoURL: https://github.com/AcmeCorp/devops-configs.git
+#       targetRevision: main
+#       path: .
+#       ref: values
+#     - repoURL: https://github.com/AcmeCorp/devops-configs.git
+#       targetRevision: main
+#       path: manifests/plane/dev  # CSRF_TRUSTED_ORIGINS 주입용 커스텀 Secret
+#     - repoURL: https://helm.plane.so
+#       chart: plane-ce
+#       targetRevision: "1.4.1"
+#       helm:
+#         releaseName: plane
+#         valueFiles:
+#           - $values/values/infra/plane/dev.yaml
+#   destination:
+#     server: https://kubernetes.default.svc
+#     namespace: tools
+#   ignoreDifferences:
+#     - group: batch
+#       kind: Job
+#       jsonPointers:
+#         - /spec/template/metadata/annotations
+#         - /spec/template/metadata/labels
+#     - group: apps
+#       kind: StatefulSet
+#       jsonPointers:
+#         - /spec/volumeClaimTemplates  # Helm chart vs API 서버 creationTimestamp 차이 무시
+#   syncPolicy:
+#     automated:
+#       prune: true
+#       selfHeal: true
+#     syncOptions:
+#       - CreateNamespace=false
+#       - RespectIgnoreDifferences=true

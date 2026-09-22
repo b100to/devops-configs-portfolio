@@ -1,0 +1,159 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: manual-scale-down
+  namespace: default
+spec:
+  template:
+    spec:
+      restartPolicy: Never
+      serviceAccountName: multi-scaler-sa
+      containers:
+        - name: scaler
+          image: alpine:latest
+          env:
+            - name: SLACK_WEBHOOK_URL
+              valueFrom:
+                secretKeyRef:
+                  name: slack-webhook
+                  key: webhook-url
+          command:
+            - /bin/sh
+            - -c
+            - |
+              echo "=== 수동 서버 끄기 실행 ==="
+
+              # kubectl과 curl, tzdata 설치
+              apk add --no-cache kubectl curl tzdata
+
+              # 시간대 설정
+              export TZ='Asia/Seoul'
+              echo "현재 시간: $(date)"
+
+              # 현재 상태 확인 (끄기 전)
+              echo "=== 현재 상태 확인 ==="
+
+              # 모든 네임스페이스 가져오기 (karpenter만 제외)
+              NAMESPACES=$(kubectl get namespaces -o jsonpath='{.items[*].metadata.name}' | tr ' ' '\n' | grep -v '^karpenter$')
+
+              TOTAL_DEPLOYMENTS=0
+              TOTAL_STATEFULSETS=0
+              TOTAL_PDBS=0
+              NAMESPACE_SUMMARY=""
+
+              for NS in $NAMESPACES; do
+                DEPLOY_COUNT=$(kubectl get deployment -n $NS --no-headers 2>/dev/null | wc -l | tr -d ' ')
+                STS_COUNT=$(kubectl get statefulset -n $NS --no-headers 2>/dev/null | wc -l | tr -d ' ')
+                PDB_COUNT=$(kubectl get pdb -n $NS --no-headers 2>/dev/null | wc -l | tr -d ' ')
+
+                if [ "$DEPLOY_COUNT" -gt 0 ] || [ "$STS_COUNT" -gt 0 ] || [ "$PDB_COUNT" -gt 0 ]; then
+                  echo "[$NS] Deployments: ${DEPLOY_COUNT}, StatefulSets: ${STS_COUNT}, PDBs: ${PDB_COUNT}"
+                  NAMESPACE_SUMMARY="${NAMESPACE_SUMMARY}[$NS] D:${DEPLOY_COUNT} S:${STS_COUNT} P:${PDB_COUNT}\n"
+                  TOTAL_DEPLOYMENTS=$((TOTAL_DEPLOYMENTS + DEPLOY_COUNT))
+                  TOTAL_STATEFULSETS=$((TOTAL_STATEFULSETS + STS_COUNT))
+                  TOTAL_PDBS=$((TOTAL_PDBS + PDB_COUNT))
+                fi
+              done
+
+              echo "총계 - Deployments: ${TOTAL_DEPLOYMENTS}개, StatefulSets: ${TOTAL_STATEFULSETS}개, PDBs: ${TOTAL_PDBS}개"
+
+              # 서버 끄기 (karpenter 제외)
+              echo "=== 모든 네임스페이스 스케일 다운 시작 (karpenter 제외) ==="
+
+              for NS in $NAMESPACES; do
+                # kube-system의 경우 coredns는 제외하고 나머지만 스케일 다운
+                if [ "$NS" = "kube-system" ]; then
+                  echo "[$NS] Scaling down deployments (coredns 제외)..."
+
+                  # kube-system의 모든 deployment 가져오기
+                  KUBE_DEPLOYMENTS=$(kubectl get deployment -n kube-system -o jsonpath='{.items[*].metadata.name}')
+
+                  for DEPLOY in $KUBE_DEPLOYMENTS; do
+                    if [ "$DEPLOY" != "coredns" ]; then
+                      echo "  - Scaling down $DEPLOY"
+                      kubectl scale deployment -n kube-system "$DEPLOY" --replicas=0
+                    else
+                      echo "  - Skipping coredns (필수 컴포넌트)"
+                    fi
+                  done
+
+                  # kube-system의 statefulset도 처리
+                  STS_COUNT=$(kubectl get statefulset -n kube-system --no-headers 2>/dev/null | wc -l | tr -d ' ')
+                  if [ "$STS_COUNT" -gt 0 ]; then
+                    echo "[$NS] Scaling down ${STS_COUNT} statefulsets..."
+                    kubectl scale statefulset --all --replicas=0 -n kube-system
+                  fi
+
+                  # kube-system의 PDB 삭제 (coredns 제외)
+                  KUBE_PDBS=$(kubectl get pdb -n kube-system -o jsonpath='{.items[*].metadata.name}' 2>/dev/null)
+                  if [ -n "$KUBE_PDBS" ]; then
+                    echo "[$NS] Deleting PDBs (coredns 제외)..."
+                    for PDB in $KUBE_PDBS; do
+                      if [[ "$PDB" != *"coredns"* ]]; then
+                        echo "  - Deleting $PDB"
+                        kubectl delete pdb "$PDB" -n kube-system 2>&1 || echo "    Failed to delete $PDB"
+                      else
+                        echo "  - Skipping $PDB (coredns 관련)"
+                      fi
+                    done
+                  fi
+                else
+                  # 다른 네임스페이스는 모두 스케일 다운
+                  DEPLOY_COUNT=$(kubectl get deployment -n $NS --no-headers 2>/dev/null | wc -l | tr -d ' ')
+                  STS_COUNT=$(kubectl get statefulset -n $NS --no-headers 2>/dev/null | wc -l | tr -d ' ')
+
+                  if [ "$DEPLOY_COUNT" -gt 0 ]; then
+                    echo "[$NS] Scaling down ${DEPLOY_COUNT} deployments..."
+                    kubectl scale deployment --all --replicas=0 -n $NS
+                  fi
+
+                  if [ "$STS_COUNT" -gt 0 ]; then
+                    echo "[$NS] Scaling down ${STS_COUNT} statefulsets..."
+                    kubectl scale statefulset --all --replicas=0 -n $NS
+                  fi
+
+                  # PDB 삭제
+                  PDB_COUNT=$(kubectl get pdb -n $NS --no-headers 2>/dev/null | wc -l | tr -d ' ')
+                  if [ "$PDB_COUNT" -gt 0 ]; then
+                    echo "[$NS] Deleting ${PDB_COUNT} PDBs..."
+                    kubectl delete pdb --all -n $NS 2>&1 || echo "    Failed to delete PDBs"
+                  fi
+                fi
+              done
+
+              echo "✅ 모든 리소스 스케일 다운 완료 (karpenter, coredns 제외)"
+
+              # 잠시 대기
+              sleep 5
+
+              # 현재 시간을 변수로 저장 (KST 확인)
+              echo "DEBUG - TZ: $TZ"
+              echo "DEBUG - date output: $(date)"
+              CURRENT_TIME=$(TZ='Asia/Seoul' date '+%Y-%m-%d %H:%M:%S')
+              echo "DEBUG - CURRENT_TIME: $CURRENT_TIME"
+
+              # 슬랙 알림 전송
+              echo "=== 슬랙 알림 전송 ==="
+              curl -X POST -H 'Content-type: application/json' \
+                --data @- \
+                "$SLACK_WEBHOOK_URL" << EOF
+              {
+                "text": "🔧 *[수동실행] 서버 종료*",
+                "attachments": [
+                  {
+                    "color": "warning",
+                    "fields": [
+                      {"title": "시간", "value": "$CURRENT_TIME", "short": true},
+                      {"title": "실행방식", "value": "수동 실행", "short": true},
+                      {"title": "Deployments", "value": "${TOTAL_DEPLOYMENTS}개 종료", "short": true},
+                      {"title": "StatefulSets", "value": "${TOTAL_STATEFULSETS}개 종료", "short": true},
+                      {"title": "PDBs", "value": "${TOTAL_PDBS}개 삭제", "short": true},
+                      {"title": "제외 항목", "value": "karpenter 네임스페이스, coredns 관련 리소스는 유지됨", "short": false},
+                      {"title": "비고", "value": "관리자가 수동으로 서버를 종료했습니다", "short": false}
+                    ]
+                  }
+                ]
+              }
+              EOF
+
+              echo "=== 수동 서버 끄기 완료 ==="

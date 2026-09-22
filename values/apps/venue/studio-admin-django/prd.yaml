@@ -1,0 +1,135 @@
+# =============================================================================
+# Venue Studio Admin Django - Production Environment
+# =============================================================================
+global:
+  env: prd
+  registry:
+    accountId: "222222222222"
+    region: "ap-northeast-2"
+
+# =============================================================================
+# Application
+# =============================================================================
+fullnameOverride: studio-admin-django
+
+# Namespace (없으면 자동 생성)
+namespace:
+  name: venue
+
+# =============================================================================
+# Image
+# =============================================================================
+image:
+  repository: partner-django-admin-prod
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# =============================================================================
+# Service Account
+# =============================================================================
+serviceAccount:
+  create: false
+  name: app-venue
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::222222222222:role/eks-pod-identity-app-venue-v2
+
+# =============================================================================
+# Deployment
+# =============================================================================
+replicaCount: 1
+
+priorityClassName: very-high-priority
+
+labels:
+  env: prd
+
+podLabels:
+  admission.datadoghq.com/enabled: "true"
+
+podAnnotations:
+  admission.datadoghq.com/python-lib.version: "v2.14.4"
+
+# =============================================================================
+# Service
+# =============================================================================
+service:
+  enabled: true
+  type: ClusterIP
+  port: 80
+  targetPort: 8000
+
+# =============================================================================
+# Health Checks
+# =============================================================================
+livenessProbe:
+  enabled: true
+  httpGet:
+    path: /
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 30
+  timeoutSeconds: 10
+  failureThreshold: 10
+  successThreshold: 1
+
+readinessProbe:
+  enabled: true
+  httpGet:
+    path: /
+    port: http
+  initialDelaySeconds: 30
+  periodSeconds: 30
+  timeoutSeconds: 10
+  failureThreshold: 10
+  successThreshold: 1
+
+# =============================================================================
+# Resources
+# =============================================================================
+resources:
+  requests:
+    cpu: 10m  # Kubecost 7d avg 3.9m / 0.6 → min 10m
+    memory: 1000Mi
+  limits:
+    memory: 1000Mi
+
+# =============================================================================
+# Autoscaling
+# =============================================================================
+autoscaling:
+  enabled: false
+
+# =============================================================================
+# Environment Variables
+# =============================================================================
+env:
+  # Django
+  - name: DJANGO_ENV
+    value: prod
+  - name: DD_TRACING_ENABLED
+    value: "true"
+  - name: DD_TRACE_ENABLED
+    value: "true"
+
+# =============================================================================
+# AWS
+# =============================================================================
+aws:
+  enabled: true
+  region: ap-northeast-2
+
+envFrom: []
+
+# =============================================================================
+# Datadog
+# =============================================================================
+datadog:
+  enabled: true
+
+
+# =============================================================================
+# Scheduling
+# =============================================================================
+# 멀티 AZ 이중화를 위한 topologySpread 활성화
+defaultTopologySpread:
+  enabled: true

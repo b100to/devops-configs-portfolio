@@ -1,0 +1,72 @@
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: airflow-green-secrets
+  namespace: airflow-green
+spec:
+  refreshInterval: "15m"
+  secretStoreRef:
+    name: ss-airflow-green
+    kind: SecretStore
+  target:
+    name: airflow-green-secrets
+    creationPolicy: Owner
+  data:
+    - secretKey: fernet-key
+      remoteRef:
+        key: eks/acme-main-v2-prd
+        property: AIRFLOW_GREEN__CORE__FERNET_KEY
+    - secretKey: api-secret-key
+      remoteRef:
+        key: eks/acme-main-v2-prd
+        property: AIRFLOW_GREEN__API__SECRET_KEY
+    - secretKey: jwt-secret
+      remoteRef:
+        key: eks/acme-main-v2-prd
+        property: AIRFLOW_GREEN__API_AUTH__JWT_SECRET
+    - secretKey: AIRFLOW__WEBSERVER__OAUTH_CLIENT_SECRET
+      remoteRef:
+        key: eks/acme-main-v2-prd
+        property: airflow_green_oidc_authentik_client_secret
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: airflow-mate-db-green
+  namespace: airflow-green
+spec:
+  refreshInterval: "15m"
+  secretStoreRef:
+    name: ss-airflow-green
+    kind: SecretStore
+  target:
+    name: airflow-mate-db-green
+    creationPolicy: Owner
+  data:
+    - secretKey: connection
+      remoteRef:
+        key: eks/acme-main-v2-prd
+        property: connection_v3
+---
+apiVersion: external-secrets.io/v1
+kind: ExternalSecret
+metadata:
+  name: airflow-green-aws-secret
+  namespace: airflow-green
+spec:
+  refreshInterval: "15m"
+  secretStoreRef:
+    name: ss-airflow-green
+    kind: SecretStore
+  target:
+    name: airflow-green-aws-secret
+    creationPolicy: Owner
+  data:
+    - secretKey: AWS_ACCESS_KEY_ID
+      remoteRef:
+        key: eks/acme-main-v2-prd
+        property: AIRFLOW_AWS_ACCESS_KEY_ID
+    - secretKey: AWS_SECRET_ACCESS_KEY
+      remoteRef:
+        key: eks/acme-main-v2-prd
+        property: AIRFLOW_AWS_SECRET_ACCESS_KEY

@@ -1,0 +1,136 @@
+# =============================================================================
+# Mall v3 Beat - Production Environment
+# =============================================================================
+
+global:
+  env: prd
+  registry:
+    accountId: "222222222222"
+    region: "ap-northeast-2"
+
+# =============================================================================
+# Application
+# =============================================================================
+fullnameOverride: mall-v3-beat
+
+# Namespace (없으면 자동 생성)
+namespace:
+  name: mall
+
+# =============================================================================
+# Image
+# =============================================================================
+image:
+  repository: acmemall-backend-prod
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# =============================================================================
+# Service Account
+# =============================================================================
+serviceAccount:
+  create: false
+  name: app-mall
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::222222222222:role/eks-pod-identity-app-mall-v2
+
+# =============================================================================
+# Deployment
+# =============================================================================
+replicaCount: 1
+
+command:
+  - "/bin/sh"
+  - "-c"
+  - " celery -A acme beat --loglevel=info "
+
+podAnnotations:
+  ad.datadoghq.com/acmemall-backend-prd.logs: '[{"source":"django"}]'
+
+labels:
+  env: prd
+
+# =============================================================================
+# Service
+# =============================================================================
+service:
+  enabled: false
+  type: ClusterIP
+  port: 80
+  targetPort: 8080
+
+# =============================================================================
+# Health Checks
+# =============================================================================
+livenessProbe:
+  enabled: false
+readinessProbe:
+  enabled: false
+startupProbe:
+  enabled: false
+
+# =============================================================================
+# Resources
+# =============================================================================
+resources:
+  requests:
+    cpu: 10m  # Kubecost 7d avg 1.4m / 0.6 → min 10m
+    memory: 250Mi
+  limits:
+    cpu: 250m
+    memory: 250Mi
+
+# =============================================================================
+# Autoscaling
+# =============================================================================
+autoscaling:
+  enabled: false
+
+# =============================================================================
+# Environment Variables
+# =============================================================================
+env:
+  # Django
+  - name: DJANGO_SETTINGS_MODULE
+    value: acme.settings.prod
+  - name: ACME_ENV
+    value: prod
+  # Redis
+  - name: REDIS_CACHE_URL
+    value: redis://acmemall-prod-cache.abcdef.ng.0001.apn2.cache.amazonaws.com:6379/0
+  - name: CELERY_BROKER_URL
+    value: redis://acmemall-prod-cache.abcdef.ng.0001.apn2.cache.amazonaws.com:6379/2
+  # Datadog
+  # DD_SERVICE, DD_ENV, DD_VERSION, DD_LOGS_INJECTION, DD_TRACE_SAMPLE_RATE, DD_TRACE_AGENT_URL
+  # -> 차트 템플릿(app.datadogEnv)에서 자동 주입됨
+  - name: DD_TRACE_ENABLED
+    value: "true"
+
+# =============================================================================
+# AWS
+# =============================================================================
+aws:
+  enabled: true
+  region: ap-northeast-2
+
+envFrom: []
+
+# =============================================================================
+# Datadog
+# =============================================================================
+datadog:
+  enabled: true
+  version: v3
+  logsInjection: "true"
+  traceSampleRate: "0.1"
+# =============================================================================
+# Scheduling
+# =============================================================================
+# nodeSelector:
+#   karpenter.sh/nodepool: batch
+
+# tolerations:
+#   - key: node-group-type
+#     operator: Equal
+#     value: batch
+#     effect: NoSchedule

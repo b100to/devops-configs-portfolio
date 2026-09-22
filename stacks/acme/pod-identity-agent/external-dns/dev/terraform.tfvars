@@ -1,0 +1,1 @@
+service_account = "external-dns"

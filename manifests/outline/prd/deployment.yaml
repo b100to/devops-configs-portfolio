@@ -1,0 +1,276 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: outline
+  namespace: outline
+  annotations:
+    # IRSA: stacks/acme/outline/prd 에서 생성하는 irsa-outline-prd role
+    eks.amazonaws.com/role-arn: arn:aws:iam::222222222222:role/irsa-outline-prd
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: outline
+  namespace: outline
+  annotations:
+    argocd.argoproj.io/sync-wave: "3"
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app: outline
+  template:
+    metadata:
+      labels:
+        app: outline
+    spec:
+      serviceAccountName: outline
+      # ---------------------------------------------------------------------------
+      # Notion import bug/perf 패치 (v1.6.1) — 3종
+      # 원본: /opt/outline/build/plugins/notion/server/notion.js
+      #
+      # [Patch 1] filter_properties 하드코딩 제거 (line 227)
+      #   Notion 이 old database 를 새 data_source 로 마이그레이션 후 이 param 이
+      #   `validation_error: invalid attribute: title` 유발 → import 전체 errored.
+      #   Acme workspace 90/90 DB 재현. 해당 라인 제거 시 정상 동작 (모든 property 반환).
+      #
+      # [Patch 2] fetchBlockChildren + queryDatabase 의 catch 를 **catch-all** 로 전환
+      #   초기에는 ObjectNotFound/Unauthorized 만, 이후 ValidationError 추가했지만,
+      #   계속 새로운 Notion API 에러(데이터 스키마 변화/신규 블록 타입 등) 가 나타나며
+      #   매번 5~8시간 import 가 errored 로 전체 롤백되는 사이클 반복. 근본 해결로
+      #   `APIResponseError` 전체를 skip 대상으로 확장 → 해당 페이지/블록 데이터만
+      #   누락하고 나머지는 완주. import 전체 중단보다 부분 데이터 손실이 낫다는 판단.
+      #   RateLimited 는 별도 분기(retry)로 처리되므로 skip 영향 없음.
+      #   sed global 매치로 queryDatabase 동일 패턴에도 동일 적용.
+      #
+      # [Patch 3] Notion API rate limit: 3 req/s → 10 req/s (line 42)
+      #   5000+ 페이지 대용량 import 가 83분+ 걸리는 근본 원인: Outline 이 Notion API 를
+      #   초당 3회 로 하드코딩 레이트리밋. Notion 실제 허용치는 burst 10+/sec 수준이고,
+      #   429 받으면 이미 auto-retry 로 backoff 하는 로직 있음 → 안전하게 3.3배 가속 가능.
+      #
+      # 모두 원본 이미지 수정 없이 initContainer + sed 로 런타임 오버라이드.
+      # upstream 수정 시 (outline/outline 이슈 리포트 예정) 이 블록 제거.
+      #
+      # ⚠️ image 는 1.7.0 으로 고정(핀). :latest 금지.
+      #    outline 1.8.0 (#12361, 2026-05-16 "Refactor Markdown importer to use new
+      #    import pipeline") 에서 ImportMarkdownZipTask.js 빌드 경로/구조가 바뀌어
+      #    위 sed 패치(특히 src4)가 깨짐 → `sed: can't read .../ImportMarkdownZipTask.js`
+      #    → set -e 로 init 전체 실패 → Init:Error 로 파드 기동 불가.
+      #    위 패치 4종이 검증된 1.7.0 (2026-04-24 릴리스, 4/27 패치 작업 시점) 에 고정.
+      #    버전 올릴 때는 반드시 패치 sed 매칭/검증을 새 버전 기준으로 재확인할 것.
+      # ---------------------------------------------------------------------------
+      initContainers:
+        - name: patch-notion-js
+          image: outlinewiki/outline:1.7.0
+          command:
+            - sh
+            - -c
+            - |
+              set -e
+              # --- notion.js 패치 (filter_properties, catch-all, rate limit) ---
+              src1=/opt/outline/build/plugins/notion/server/notion.js
+              dst1=/patched/notion.js
+              sed -E -e '/filter_properties: \["title"\]/d' \
+                     -e 's#if \(error instanceof _client\.APIResponseError && \(error\.code[^{]+\) \{#if (error instanceof _client.APIResponseError) {#g' \
+                     -e 's#^      limit: 3$#      limit: 10#' \
+                     "$src1" > "$dst1"
+              # --- NotionAPIImportTask.js 패치 (processPage 의 skip 조건을 모든 APIResponseError 로 확장) ---
+              # Rate limit (429) 등 재시도 실패 시 throw 하여 import 전체 중단되던 문제 해결.
+              # 이제 어떤 Notion API 에러든 해당 페이지만 skip 하고 import 계속.
+              src2=/opt/outline/build/plugins/notion/server/tasks/NotionAPIImportTask.js
+              dst2=/patched/NotionAPIImportTask.js
+              sed -E 's#if \(error\.code === _client\.APIErrorCode\.ObjectNotFound[^{]+\{#if (true) {#' \
+                     "$src2" > "$dst2"
+              # --- serializer.js 패치 (빈 테이블 RangeError 방지) ---
+              # MarkdownSerializerState.renderTable 가 node.child(0) 호출 시
+              # Notion 의 빈 테이블 → Fragment 가 비어있으면 prosemirror-model 에서
+              # `RangeError: Index 0 out of range for <>` throw → import.processed 단계
+              # 전체 실패. headerRow 접근 전 childCount === 0 가드 추가.
+              src3=/opt/outline/build/shared/editor/lib/markdown/serializer.js
+              dst3=/patched/serializer.js
+              sed 's#const headerRow = node\.child(0);#if (node.childCount === 0) { this.inTable = prevTable; return; } const headerRow = node.child(0);#' \
+                     "$src3" > "$dst3"
+              # --- ImportMarkdownZipTask.js 패치 (재귀 Promise.all → sequential reduce) ---
+              # parseNodeChildren 이 children 을 Promise.all + 재귀로 무제한 병렬 처리 →
+              # 큰 zip (Wiki 2252 파일) 에서 동시 트랜잭션 폭증 → SequelizeConnectionAcquireTimeoutError.
+              # Promise.all 을 reduce 로 sequential 처리하여 동시 트랜잭션 1개로 제한.
+              # 속도 손실 < 데이터 누락 손실 (현재는 통째로 실패).
+              src4=/opt/outline/build/server/queues/tasks/ImportMarkdownZipTask.js
+              dst4=/patched/ImportMarkdownZipTask.js
+              sed -E -e 's|^      await Promise\.all\(children\.map\(async child => \{$|      await children.reduce(async (acc, child) => { await acc;|' \
+                     -e '/^      \}\)\);$/{ s|^      \}\)\);$|      }, Promise.resolve());| }' \
+                     "$src4" > "$dst4"
+              # 검증 1: filter_properties 라인이 제거됐는지
+              if grep -q 'filter_properties: \["title"\]' "$dst1"; then
+                echo "FATAL: patch 1 failed"; exit 1
+              fi
+              # 검증 2: notion.js catch-all 2곳
+              if [ "$(grep -c '^      if (error instanceof _client\.APIResponseError) {$' "$dst1")" != "2" ]; then
+                echo "FATAL: patch 2 failed"; exit 1
+              fi
+              # 검증 3: rate limit
+              if ! grep -q '^      limit: 10$' "$dst1"; then
+                echo "FATAL: patch 3 failed"; exit 1
+              fi
+              # 검증 4: NotionAPIImportTask.js 의 processPage catch 가 `if (true)` 로 변환됐는지
+              if ! grep -q '        if (true) {$' "$dst2"; then
+                echo "FATAL: patch 5 failed — processPage skip condition not expanded"; exit 1
+              fi
+              # 검증 6: serializer.js 의 renderTable 가 childCount 가드 추가됐는지
+              if ! grep -q 'if (node.childCount === 0)' "$dst3"; then
+                echo "FATAL: patch 6 failed — renderTable empty guard missing"; exit 1
+              fi
+              # 검증 7: ImportMarkdownZipTask.js 의 parseNodeChildren 이 sequential 로 변환됐는지
+              if ! grep -q 'await children.reduce(async (acc, child)' "$dst4"; then
+                echo "FATAL: patch 7 failed — parseNodeChildren not sequentialized"; exit 1
+              fi
+              echo "patched notion.js ($(wc -l < "$dst1")) + NotionAPIImportTask.js ($(wc -l < "$dst2")) + serializer.js ($(wc -l < "$dst3")) + ImportMarkdownZipTask.js ($(wc -l < "$dst4")) ready"
+          volumeMounts:
+            - name: patched-notion
+              mountPath: /patched
+      containers:
+        - name: outline
+          # 버전 핀 이유는 위 initContainers 주석 참조 (1.7.0 고정, :latest 금지)
+          image: outlinewiki/outline:1.7.0
+          ports:
+            - containerPort: 3000
+          env:
+            # --- Static config ---
+            - name: PORT
+              value: "3000"
+            - name: URL
+              value: "https://wiki.acme.example"
+            - name: REDIS_URL
+              value: "redis://outline-redis:6379"
+            # NOTE: WEB_CONCURRENCY + REDIS_COLLABORATION_URL 로 멀티 프로세스 시도했으나
+            # Notion API rate limiter 가 per-process 로 독립 적용 → 4 프로세스 × limit:10
+            # = 초당 40 req → Notion 의 3 req/s 한계 대량 초과 → 429 폭탄 → 0 docs/min.
+            # 단일 프로세스 + limit:10 조합이 34 docs/min 으로 가장 안정. 롤백함.
+            # 추가 가속하려면 Redis 기반 공유 rate limiter 필요 (Outline 코드 변경 큼).
+            - name: PGSSLMODE
+              value: "disable"
+            # --- File storage: S3 (IRSA) ---
+            - name: FILE_STORAGE
+              value: "s3"
+            - name: AWS_REGION
+              value: "ap-northeast-2"
+            - name: AWS_S3_UPLOAD_BUCKET_NAME
+              value: "acme-outline-prd"
+            - name: AWS_S3_UPLOAD_BUCKET_URL
+              value: "https://acme-outline-prd.s3.ap-northeast-2.amazonaws.com"
+            - name: AWS_S3_FORCE_PATH_STYLE
+              value: "false"
+            - name: AWS_S3_ACL
+              value: "private"
+            # 단일 파일 업로드 상한 (이미지/첨부): 3 GiB
+            # Notion workspace export zip (Wiki 1.3 GiB) 업로드 차단 방지로 1 → 3 GiB 상향.
+            - name: FILE_STORAGE_UPLOAD_MAX_SIZE
+              value: "3221225472"
+            # import 전체 크기 상한: 5 GiB
+            - name: MAXIMUM_IMPORT_SIZE
+              value: "5368709120"
+            # zip import 타임아웃: 60s → 30분 (1 GB+ 대용량 zip 처리 시간 확보)
+            - name: FILE_STORAGE_IMPORT_TIMEOUT
+              value: "1800000"
+            # Postgres connection pool — Outline 기본값 5 는 대용량 zip import 시 동시 트랜잭션
+            # 폭주로 SequelizeConnectionAcquireTimeoutError 유발. 50 으로 상향 (Aurora airflow
+            # cluster 는 max_connections 충분, 평소 active 17~19 수준).
+            - name: DATABASE_CONNECTION_POOL_MAX
+              value: "50"
+            - name: DATABASE_CONNECTION_POOL_MIN
+              value: "5"
+            - name: DEFAULT_LANGUAGE
+              value: "ko_KR"
+            # --- Authentik OIDC ---
+            - name: OIDC_CLIENT_ID
+              value: "outline"
+            - name: OIDC_AUTH_URI
+              value: "https://sso.acme.example/application/o/authorize/"
+            - name: OIDC_TOKEN_URI
+              value: "https://sso.acme.example/application/o/token/"
+            - name: OIDC_USERINFO_URI
+              value: "https://sso.acme.example/application/o/userinfo/"
+            - name: OIDC_LOGOUT_URI
+              value: "https://sso.acme.example/application/o/outline/end-session/"
+            - name: OIDC_USERNAME_CLAIM
+              value: "email"
+            - name: OIDC_DISPLAY_NAME
+              value: "Acme SSO"
+            - name: OIDC_SCOPES
+              value: "openid profile email"
+            # --- Secrets ---
+            - name: SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: outline-secrets
+                  key: SECRET_KEY
+            - name: UTILS_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: outline-secrets
+                  key: UTILS_SECRET
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: outline-secrets
+                  key: DATABASE_URL
+            - name: OIDC_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: outline-secrets
+                  key: OIDC_CLIENT_SECRET
+            - name: NOTION_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: outline-secrets
+                  key: NOTION_CLIENT_ID
+            - name: NOTION_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: outline-secrets
+                  key: NOTION_CLIENT_SECRET
+          resources:
+            # Notion import 시 zip 해제 + 대용량 파일 처리 + Redis queue worker 병렬
+            # 기존 1Gi 한도에서 OOMKilled 재발 → 4Gi, CPU request 500m으로 상향
+            requests:
+              cpu: 500m
+              memory: 2Gi
+            limits:
+              cpu: "2"
+              memory: 4Gi
+          readinessProbe:
+            httpGet:
+              path: /_health
+              port: 3000
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /_health
+              port: 3000
+            initialDelaySeconds: 60
+            periodSeconds: 30
+          volumeMounts:
+            # initContainer 가 만든 패치된 파일들을 원본 경로로 오버라이드
+            - name: patched-notion
+              mountPath: /opt/outline/build/plugins/notion/server/notion.js
+              subPath: notion.js
+              readOnly: true
+            - name: patched-notion
+              mountPath: /opt/outline/build/plugins/notion/server/tasks/NotionAPIImportTask.js
+              subPath: NotionAPIImportTask.js
+              readOnly: true
+            - name: patched-notion
+              mountPath: /opt/outline/build/shared/editor/lib/markdown/serializer.js
+              subPath: serializer.js
+              readOnly: true
+            - name: patched-notion
+              mountPath: /opt/outline/build/server/queues/tasks/ImportMarkdownZipTask.js
+              subPath: ImportMarkdownZipTask.js
+              readOnly: true
+      volumes:
+        - name: patched-notion
+          emptyDir: {}

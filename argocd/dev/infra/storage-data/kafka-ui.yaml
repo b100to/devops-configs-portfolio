@@ -1,0 +1,28 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: kafka-ui
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  sources:
+    - repoURL: https://github.com/AcmeCorp/devops-configs.git
+      targetRevision: main
+      path: .
+      ref: values
+    - repoURL: https://ui.charts.kafbat.io/
+      chart: kafka-ui
+      targetRevision: 1.5.3
+      helm:
+        releaseName: kafka-ui
+        valueFiles:
+          - $values/values/infra/kafka-ui/dev.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: kafka
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true

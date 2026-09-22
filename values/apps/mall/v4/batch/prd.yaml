@@ -1,0 +1,105 @@
+# =============================================================================
+# Mall V4 Batch - Production Environment Values
+# =============================================================================
+# 이 파일은 ArgoCD Application에서 backend repo의 values와 병합됩니다.
+# backend repo (mall/batch/helm/prd.yaml)에는 app: {} 아래의 job 정의들이 있습니다.
+# =============================================================================
+
+commonValues:
+  # =============================================================================
+  # Global & Environment
+  # =============================================================================
+  global:
+    env: prd
+    registry:
+      accountId: "222222222222"
+      region: "ap-northeast-2"
+
+  env: prd
+  fullnameOverride: ""
+
+  # =============================================================================
+  # Namespace
+  # =============================================================================
+  namespace:
+    name: mall-batch
+
+  # =============================================================================
+  # Image Configuration
+  # =============================================================================
+  image:
+    repository: acmemall-backend-v4/prd/batch
+    tag: "d2356af-2323"
+    pullPolicy: IfNotPresent
+
+  # =============================================================================
+  # Service Account
+  # =============================================================================
+  serviceAccount:
+    name: "" # 필요시 지정
+
+  # =============================================================================
+  # Annotations
+  # =============================================================================
+  podAnnotations:
+    admission.datadoghq.com/java-lib.version: "v1.18.2"
+    karpenter.sh/do-not-evict: "true" # Production: eviction 방지
+
+  # =============================================================================
+  # Resources (Production)
+  # =============================================================================
+  resources:
+    requests:
+      cpu: 500m # 0.5 core
+      memory: 1500Mi
+    limits:
+      memory: 1500Mi
+
+  # =============================================================================
+  # Datadog Configuration
+  # =============================================================================
+  datadog:
+    enabled: true
+    version: "" # image.tag 사용
+    logsInjection: "true"
+    traceSampleRate: "0.1"
+    traceAgentUrl: unix:///var/run/datadog/apm.socket
+    traceEnabled: "false" # batch job은 보통 trace 비활성화
+
+  # =============================================================================
+  # Karpenter 통합 - NodePool 스케줄링
+  # =============================================================================
+  nodeSelector:
+    karpenter.sh/nodepool: batch
+
+  tolerations:
+    - key: node-group-type
+      operator: Equal
+      value: batch
+      effect: NoSchedule
+
+  # affinity: {}  # 필요시 추가
+
+# =============================================================================
+# Individual CronJobs
+# =============================================================================
+# app: {} 부분은 backend repo의 mall/batch/helm/prd.yaml에서 정의됩니다.
+# 예시:
+# app:
+#   my-job:
+#     schedule: "0 0 * * *"
+#     timeZone: "Asia/Seoul"
+#     backoffLimit: 3
+#     activeDeadlineSeconds: 3600
+#     ttlSecondsAfterFinished: 86400
+#     command:
+#       - /bin/sh
+#       - -c
+#       - echo "Hello from production batch job"
+
+# =============================================================================
+# Scheduling
+# =============================================================================
+# 멀티 AZ 이중화를 위한 topologySpread 활성화
+defaultTopologySpread:
+  enabled: true

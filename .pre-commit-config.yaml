@@ -1,0 +1,21 @@
+repos:
+  - repo: https://github.com/mineiros-io/pre-commit-hooks
+    rev: v0.5.1
+    hooks:
+      - id: terramate-generate
+        files: \.(hcl|tf)$
+      - id: terramate-fmt
+        files: \.hcl$
+      - id: terraform-fmt
+        files: \.tf$
+      - id: tflint
+        files: \.tf$
+
+  - repo: local
+    hooks:
+      - id: terraform-docs
+        name: Generate terraform docs
+        entry: bash -c 'for dir in $(find stacks -type f -name "*.tf" -exec dirname {} \; | sort -u | grep -v ".terraform"); do (cd "$dir" && terraform-docs -c $(git rev-parse --show-toplevel)/.terraform-docs.yml . || true); done'
+        language: system
+        files: \.tf$
+        pass_filenames: false

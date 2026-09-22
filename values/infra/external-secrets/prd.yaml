@@ -1,0 +1,26 @@
+serviceAccount:
+  annotations:
+    eks.amazonaws.com/role-arn: "arn:aws:iam::222222222222:role/eks-pod-identity-external-secrets-v2"
+
+resources:
+  requests:
+    cpu: 10m  # Kubecost 7d avg 0.7m → min 10m
+    memory: 57Mi  # Kubecost 7d avg 34Mi / 0.6
+  limits:
+    memory: 100Mi
+
+certController:
+  resources:
+    requests:
+      cpu: 10m  # Kubecost 7d avg 0.6m → min 10m
+      memory: 68Mi  # Kubecost 7d avg 41Mi / 0.6
+    limits:
+      memory: 100Mi
+
+webhook:
+  resources:
+    requests:
+      cpu: 10m  # Kubecost 7d avg 0.2m → min 10m
+      memory: 43Mi  # Kubecost 7d avg 26Mi / 0.6
+    limits:
+      memory: 80Mi

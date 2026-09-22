@@ -1,0 +1,56 @@
+# priority-classes.yaml
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: critical-priority
+value: 1000000
+globalDefault: false
+description: "Gateway services"
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: very-high-priority
+value: 500000
+globalDefault: false
+description: "Core user services"
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: high-priority
+value: 100000
+globalDefault: false
+description: "Main interfaces and admin dashboards"
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: medium-high-priority
+value: 50000
+globalDefault: false
+description: "Primary business services"
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: medium-priority
+value: 10000
+globalDefault: false
+description: "Secondary business services"
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: medium-low-priority
+value: 5000
+globalDefault: false
+description: "User-facing business services"
+---
+apiVersion: scheduling.k8s.io/v1
+kind: PriorityClass
+metadata:
+  name: low-priority
+value: 1000
+globalDefault: true
+description: "Auxiliary services"

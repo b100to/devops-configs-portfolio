@@ -1,0 +1,218 @@
+# Traefik Helm Chart Values - Production
+# Chart: https://github.com/traefik/traefik-helm-chart
+
+# Deployment 설정
+deployment:
+  enabled: true
+  kind: Deployment
+  replicas: 2 # Production은 최소 3개
+
+  # Pod annotations
+  podAnnotations:
+    # Datadog OpenMetrics - Traefik 라우터별 메트릭 수집 (DNS 전환 모니터링용)
+    ad.datadoghq.com/traefik.checks: |
+      {
+        "openmetrics": {
+          "instances": [{
+            "prometheus_url": "http://%%host%%:9100/metrics",
+            "namespace": "traefik",
+            "metrics": ["traefik_router_requests_total", "traefik_router_request_duration_seconds*"],
+            "send_distribution_buckets": true
+          }]
+        }
+      }
+
+  # Pod labels
+  podLabels:
+    app: traefik
+    environment: prd
+
+# Service 설정
+service:
+  enabled: true
+  type: ClusterIP
+  annotations: {}
+  labels:
+    app: traefik
+    environment: prd
+
+# Ports 정의
+ports:
+  web:
+    port: 8000
+    expose:
+      default: true
+    exposedPort: 80
+    protocol: TCP
+
+  websecure:
+    port: 8443
+    expose:
+      default: true
+    exposedPort: 443
+    protocol: TCP
+    http3:
+      enabled: false
+
+  # Traefik dashboard & API
+  traefik:
+    port: 9000
+    expose:
+      default: false
+    exposedPort: 9000
+    protocol: TCP
+
+  # Health check & metrics
+  metrics:
+    port: 9100
+    expose:
+      default: false
+    exposedPort: 9100
+    protocol: TCP
+
+# IngressRoute CRD 사용
+ingressRoute:
+  dashboard:
+    enabled: false # Production에서는 비활성화
+
+# Providers
+providers:
+  kubernetesCRD:
+    enabled: true
+    allowCrossNamespace: true # 모든 네임스페이스의 IngressRoute 허용
+    allowExternalNameServices: false
+    namespaces: [] # 모든 네임스페이스
+
+  kubernetesIngress:
+    enabled: false # Ingress 리소스는 사용하지 않음
+    publishedService:
+      enabled: false
+
+# Logs
+logs:
+  general:
+    level: INFO # Production은 INFO 레벨
+  access:
+    enabled: true
+    format: json
+    fields:
+      general:
+        defaultmode: keep
+      headers:
+        defaultmode: drop
+
+# Metrics (Prometheus)
+metrics:
+  prometheus:
+    enabled: true
+    entryPoint: metrics
+    addEntryPointsLabels: true
+    addRoutersLabels: true
+    addServicesLabels: true
+
+# Health check
+ping:
+  enabled: true
+  entryPoint: traefik
+
+# Resources
+resources:
+  requests:
+    cpu: 10m  # Kubecost 7d avg 2.9m / 0.6 → min 10m
+    memory: 69Mi  # Kubecost 7d avg 41.3Mi / 0.6
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+# Autoscaling
+autoscaling:
+  enabled: true
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: 1400  # 구 request 200m × 70% = 140m 기준 유지 (200*70/10)
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: 260  # 구 request 256Mi × 70% = 179Mi 기준 유지 (256*70/69)
+
+# Pod disruption budget
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 2 # Production은 최소 2개 유지
+
+# Security context
+securityContext:
+  capabilities:
+    drop: [ALL]
+  readOnlyRootFilesystem: true
+  runAsGroup: 65532
+  runAsNonRoot: true
+  runAsUser: 65532
+
+podSecurityContext:
+  fsGroup: 65532
+
+# 노드 분산: zone 은 soft(AZ best-effort), hostname 은 hard(동일 노드 중복 금지)
+# hostname DoNotSchedule 로 한 노드 쏠림 → 메모리 포화 노드 다운 재발 방지 (2026-06-02 사고)
+topologySpreadConstraints:
+  - maxSkew: 1
+    topologyKey: topology.kubernetes.io/zone
+    whenUnsatisfiable: ScheduleAnyway
+    # taint 걸린 노드(airflow/batch/fargate)를 분산 도메인에서 제외 (유령 도메인 방지)
+    nodeTaintsPolicy: Honor
+    labelSelector:
+      matchLabels:
+        app: traefik
+    matchLabelKeys:
+      - pod-template-hash
+  - maxSkew: 1
+    topologyKey: kubernetes.io/hostname
+    whenUnsatisfiable: DoNotSchedule
+    # 3 replica/2 노드: taint 노드를 도메인에서 빼야 2:1 배치 가능 (없으면 skew 2로 Pending)
+    nodeTaintsPolicy: Honor
+    labelSelector:
+      matchLabels:
+        app: traefik
+    matchLabelKeys:
+      - pod-template-hash
+
+# Tolerations
+tolerations: []
+
+# Node selector
+nodeSelector: {}
+
+# Priority class
+priorityClassName: "system-cluster-critical"
+
+# Additional arguments
+additionalArguments:
+  # ALB에서 TLS 종료하므로 Traefik level에서 리다이렉트 불필요
+  # ALB의 ssl-redirect annotation이 80 -> 443 리다이렉트 처리
+  - "--entrypoints.websecure.http.tls=false"
+
+  # ALB X-Forwarded-For 헤더 신뢰 설정
+  # VPC CIDR(10.0.0.0/16)만 신뢰하여 실제 클라이언트 IP를 사용
+  - "--entryPoints.web.forwardedHeaders.trustedIPs=10.0.0.0/16"
+  - "--entryPoints.websecure.forwardedHeaders.trustedIPs=10.0.0.0/16"
+
+# Environment variables
+env: []
+
+# Volumes
+volumes: []
+
+# Volume mounts
+volumeMounts: []
+
+# Global arguments (Traefik static configuration)
+globalArguments:
+  - "--global.checknewversion"

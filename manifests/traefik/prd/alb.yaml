@@ -1,0 +1,89 @@
+# ALB Ingress for Traefik - Production
+# This creates an ALB that forwards all traffic to Traefik
+
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: traefik-alb-ingress
+  namespace: traefik
+  annotations:
+    # External DNS
+    external-dns.alpha.kubernetes.io/hostname: >
+      argocd.acme.example,
+      grafana.acme.example,
+      kafka.acme.example,
+      traefik.acme.example,
+      stockroom.acme.example,
+      partner-admin.acme.example,
+      venue-admin.acme.example,
+      venue-partner.acme.example,
+      acme-corp.example,
+      beacon.acme.example,
+      member.acme.example,
+      play.acme.example,
+      recommendation-api.acme.example,
+      api.acme.example,
+      sso.acme.example,
+      airflow-green.acme.example,
+      argo-workflows.acme.example,
+      kubecost.acme.example,
+      wiki.acme.example
+    #   api.acmemall.example,
+    #   api-v4.acme.example,
+    #   apiv3.acme.example
+
+    # ALB 기본 설정
+    alb.ingress.kubernetes.io/scheme: internet-facing
+    alb.ingress.kubernetes.io/target-type: ip
+    alb.ingress.kubernetes.io/backend-protocol: HTTP
+    alb.ingress.kubernetes.io/backend-protocol-version: HTTP1
+
+    # Load Balancer 설정
+    alb.ingress.kubernetes.io/load-balancer-name: acme-main-v2-prd-traefik
+    alb.ingress.kubernetes.io/wafv2-acl-arn: >
+      arn:aws:wafv2:ap-northeast-2:222222222222:regional/webacl/prod-backend-waf-mall-webacl/00000000-0000-4000-8000-000000000003
+    # idle_timeout: 60s → 300s (outline wiki 대용량 업로드/Notion import 처리 시간 확보)
+    alb.ingress.kubernetes.io/load-balancer-attributes: >
+      idle_timeout.timeout_seconds=300,
+      access_logs.s3.enabled=true,
+      access_logs.s3.bucket=acme-backend-alb-access-logs-prod
+
+    # SSL/TLS 설정
+    alb.ingress.kubernetes.io/listen-ports: '[{"HTTP": 80}, {"HTTPS": 443}]'
+    alb.ingress.kubernetes.io/ssl-redirect: "443"
+    alb.ingress.kubernetes.io/certificate-arn: >
+      arn:aws:acm:ap-northeast-2:222222222222:certificate/00000000-0000-4000-8000-000000000005,
+      arn:aws:acm:ap-northeast-2:222222222222:certificate/00000000-0000-4000-8000-000000000004,
+      arn:aws:acm:ap-northeast-2:222222222222:certificate/00000000-0000-4000-8000-000000000001,
+      arn:aws:acm:ap-northeast-2:222222222222:certificate/00000000-0000-4000-8000-000000000013,
+      arn:aws:acm:ap-northeast-2:222222222222:certificate/00000000-0000-4000-8000-000000000007,
+      arn:aws:acm:ap-northeast-2:222222222222:certificate/00000000-0000-4000-8000-000000000014,
+      arn:aws:acm:ap-northeast-2:222222222222:certificate/00000000-0000-4000-8000-000000000016
+
+    # Health Check 설정 (Traefik /ping endpoint)
+    alb.ingress.kubernetes.io/healthcheck-path: /ping
+    alb.ingress.kubernetes.io/healthcheck-port: "9000"
+    alb.ingress.kubernetes.io/healthcheck-protocol: HTTP
+    alb.ingress.kubernetes.io/healthcheck-interval-seconds: "30"
+    alb.ingress.kubernetes.io/healthcheck-timeout-seconds: "5"
+    alb.ingress.kubernetes.io/success-codes: "200"
+
+    # 태그
+    alb.ingress.kubernetes.io/tags: >
+      Environment=prd,
+      ManagedBy=aws-load-balancer-controller,
+      Service=Traefik
+
+spec:
+  ingressClassName: alb
+  rules:
+    # Catch-all rule: 모든 트래픽을 Traefik으로 전달
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: traefik
+                port:
+                  number: 80

@@ -1,0 +1,127 @@
+# =============================================================================
+# Acme Compass v2 - Development Environment
+# acme-scraper와 동일한 구조 (IRSA로 Secrets Manager 직접 읽음, ExternalSecret 없음)
+# =============================================================================
+global:
+  env: dev
+  registry:
+    accountId: "111111111111"
+    region: "ap-northeast-2"
+
+# =============================================================================
+# Application
+# =============================================================================
+fullnameOverride: acme-compass-v2
+
+namespace:
+  name: mall
+
+# =============================================================================
+# Image
+# =============================================================================
+# tag는 ArgoCD Image Updater(newest-build)가 갱신 (write-back: argocd)
+image:
+  repository: acme/compass-v2
+  tag: latest
+  pullPolicy: Always # scraper와 동일. 앱 CI가 고유 태그를 push하기 전까지 latest 재배포 대비
+
+# =============================================================================
+# Service Account
+# =============================================================================
+# scraper와 동일하게 기존 app-mall SA 사용 (IRSA로 Secrets Manager `acme-compass-v2` 직접 조회)
+serviceAccount:
+  create: false
+  name: app-mall
+
+# =============================================================================
+# Deployment
+# =============================================================================
+labels:
+  env: dev
+
+# =============================================================================
+# Service
+# =============================================================================
+# 외부 노출 없음 (ClusterIP만, Ingress 없음)
+service:
+  enabled: true
+  type: ClusterIP
+  port: 8000
+  targetPort: 8000
+
+# =============================================================================
+# Health Checks
+# =============================================================================
+# 컨테이너가 entrypoint에서 소스 동기화 등 준비 작업을 거친 뒤 uvicorn을 띄우므로
+# (실측 약 100s) 시작 전 준비시간이 필요함. 2분 뒤부터 체크 시작, 최대 10분까지 허용.
+# 총 허용 시간 = initialDelay 120s + period 15s × failureThreshold 32 = 600s
+# 헬스 경로는 앱의 /health/liveness, /health/readiness (openapi.json 확인). /health는 404
+livenessProbe:
+  enabled: true
+  httpGet:
+    path: /health/liveness
+    port: http
+  initialDelaySeconds: 120
+  periodSeconds: 15
+  timeoutSeconds: 5
+  failureThreshold: 32
+  successThreshold: 1
+
+readinessProbe:
+  enabled: true
+  httpGet:
+    path: /health/readiness
+    port: http
+  initialDelaySeconds: 120
+  periodSeconds: 15
+  timeoutSeconds: 5
+  failureThreshold: 32
+  successThreshold: 1
+
+startupProbe:
+  enabled: false
+
+# =============================================================================
+# Resources (scraper와 동일 값)
+# =============================================================================
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 100m
+    memory: 256Mi
+
+# =============================================================================
+# Autoscaling
+# =============================================================================
+autoscaling:
+  enabled: false
+
+# =============================================================================
+# Environment Variables
+# =============================================================================
+env:
+  - name: ENVIRONMENT
+    value: dev
+
+envFrom: []
+
+# =============================================================================
+# AWS
+# =============================================================================
+aws:
+  enabled: true
+  region: ap-northeast-2
+
+# =============================================================================
+# Datadog
+# =============================================================================
+datadog:
+  enabled: false
+
+# =============================================================================
+# Scheduling
+# =============================================================================
+# 단일 AZ 환경이므로 topologySpread 비활성화
+topologySpreadConstraints: []

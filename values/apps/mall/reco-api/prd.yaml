@@ -1,0 +1,134 @@
+# =============================================================================
+# Mall Reco API - Production Environment
+# =============================================================================
+global:
+  env: prd
+  registry:
+    accountId: "222222222222"
+    region: "ap-northeast-2"
+
+# =============================================================================
+# Application
+# =============================================================================
+fullnameOverride: mall-reco-api
+
+# Namespace (없으면 자동 생성)
+namespace:
+  name: mall
+
+# =============================================================================
+# Image
+# =============================================================================
+image:
+  repository: acme-recommendation-api-prod
+  tag: latest
+  pullPolicy: IfNotPresent
+
+# =============================================================================
+# Service Account
+# =============================================================================
+serviceAccount:
+  create: false
+  name: app-mall
+
+# =============================================================================
+# Deployment
+# =============================================================================
+replicaCount: 1
+
+priorityClassName: low-priority
+
+podAnnotations:
+  admission.datadoghq.com/java-lib.version: "v1.37.1"
+
+labels:
+  env: prd
+
+# =============================================================================
+# Service
+# =============================================================================
+service:
+  enabled: true
+  type: ClusterIP
+  port: 80
+  targetPort: 8080
+
+# =============================================================================
+# Health Checks
+# =============================================================================
+livenessProbe:
+  enabled: true
+  httpGet:
+    path: /recommendation/health
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 15
+  timeoutSeconds: 1
+  failureThreshold: 3
+  successThreshold: 1
+
+readinessProbe:
+  enabled: true
+  httpGet:
+    path: /recommendation/health
+    port: http
+  initialDelaySeconds: 5
+  periodSeconds: 15
+  timeoutSeconds: 1
+  failureThreshold: 3
+  successThreshold: 1
+
+# =============================================================================
+# Resources
+# =============================================================================
+resources:
+  requests:
+    cpu: 10m  # Kubecost 7d avg 2.5m / 0.6 → min 10m
+    memory: 500Mi
+  limits:
+    memory: 1000Mi
+
+# =============================================================================
+# Autoscaling
+# =============================================================================
+autoscaling:
+  enabled: false
+
+# =============================================================================
+# Environment Variables
+# =============================================================================
+env:
+  # Spring
+  - name: SPRING_PROFILES_ACTIVE
+    value: prod
+  # Datadog
+  - name: DD_TRACING_ENABLED
+    value: "false"
+  - name: DD_TRACE_ENABLED
+    value: "true"
+
+envFrom: []
+
+# =============================================================================
+# AWS
+# =============================================================================
+aws:
+  enabled: true
+  region: ap-northeast-2
+
+# =============================================================================
+# Datadog
+# =============================================================================
+datadog:
+  enabled: true
+  version: v4
+  logsInjection: "true"
+  traceSampleRate: "0.1"
+
+
+# =============================================================================
+# Scheduling
+# =============================================================================
+# 멀티 AZ 이중화를 위한 topologySpread 활성화
+defaultTopologySpread:
+  enabled: true

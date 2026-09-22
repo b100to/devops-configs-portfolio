@@ -1,0 +1,79 @@
+serviceAccount:
+  annotations:
+    eks.amazonaws.com/role-arn: arn:aws:iam::222222222222:role/prd-acme-kubecost20240715085621795100000002
+
+clusterController:
+  enabled: false # Enterprise 기능, Free tier에서 CrashLoopBackOff 발생
+
+# Kubecost PV (비용 데이터 저장)
+persistentVolume:
+  size: 10Gi # 32Gi default → 소규모 클러스터에 10Gi 충분
+
+# Grafana 비활성화 (별도 Grafana 운영 중)
+grafana:
+  enabled: false
+
+# 내장 Prometheus
+prometheus:
+  nodeExporter:
+    enabled: true # 노드별 비용 계산에 필요 (Karpenter 노드 포함)
+
+  server:
+    global:
+      external_labels:
+        cluster_id: acme-prd
+    retention: 97h
+    persistentVolume:
+      size: 10Gi # 32Gi default → 97h retention에 10Gi 충분
+    resources:
+      requests:
+        cpu: "17m"   # Kubecost 7d avg 10.4m / 0.6
+        memory: "567Mi"  # Kubecost 7d avg 340Mi / 0.6 (극심한 과소 provisioning)
+      limits:
+        cpu: "250m"
+        memory: "600Mi"  # request(567Mi) > 기존 limit(410Mi)이므로 상향
+
+# Kubecost Frontend
+kubecostFrontend:
+  resources:
+    requests:
+      cpu: "16m"
+      memory: "8Mi"
+    limits:
+      cpu: "48m"
+      memory: "10Mi"
+
+# Kubecost Model (cost-model)
+kubecostModel:
+  resources:
+    requests:
+      cpu: "120m"
+      memory: "580Mi"
+    limits:
+      cpu: "240m"
+      memory: "1290Mi"
+
+# Forecasting
+forecasting:
+  resources:
+    requests:
+      cpu: "10m"   # Kubecost 7d avg 0.9m / 0.6 → min 10m
+      memory: "245Mi"  # Kubecost 7d avg 147.2Mi / 0.6
+    limits:
+      cpu: "200m"
+      memory: "300Mi"  # request(245Mi) > 기존 limit(200Mi)이므로 상향
+
+# Aggregator - Cloud Cost
+kubecostAggregator:
+  cloudCost:
+    resources:
+      requests:
+        cpu: "100m"
+        memory: "21Mi"
+      limits:
+        cpu: "400m"
+        memory: "160Mi"
+
+# 네트워크 비용 비활성화 (추가 DaemonSet 불필요)
+networkCosts:
+  enabled: false

@@ -1,0 +1,26 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: traefik-routes
+  namespace: argocd
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/AcmeCorp/devops-configs.git
+    targetRevision: main
+    path: manifests/traefik/dev
+    directory:
+      recurse: true
+  destination:
+    server: https://kubernetes.default.svc
+  syncPolicy:
+    automated:
+      prune: true
+      selfHeal: true
+    syncOptions:
+      - CreateNamespace=false # 각 네임스페이스는 이미 존재
+  info:
+    - name: Description
+      value: "Traefik IngressRoutes and Middlewares for Development"

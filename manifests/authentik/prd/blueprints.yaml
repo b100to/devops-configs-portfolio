@@ -1,0 +1,1120 @@
+# Authentik Blueprints - Brand + Google OAuth Source 설정
+# ConfigMap으로 마운트 → Authentik이 자동 적용
+#
+# [수동 설정 - Blueprint로 관리 불가]
+# 1. Identification Stage에 Google source 연결 (Admin > Flows > default-authentication-flow > Identification Stage > Sources)
+#    - !Find를 list 내부에서 사용 불가하여 Blueprint으로 관리 불가
+# 2. 관리자 유저 type 변경 (Admin > Directory > Users > 해당 유저 > type: internal)
+#    - Google 최초 로그인 시 type=external로 생성됨, 관리자는 수동으로 internal 변경 필요
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: authentik-blueprints
+  namespace: authentik
+data:
+  # Brand 도메인 설정 (Google OAuth redirect_uri 생성에 필수)
+  brand.yaml: |
+    version: 1
+    metadata:
+      name: Acme SSO Brand
+      labels:
+        blueprints.goauthentik.io/instantiate: "true"
+    entries:
+      - model: authentik_brands.brand
+        identifiers:
+          default: true
+        state: present
+        attrs:
+          domain: sso.acme.example
+          branding_title: Acme SSO
+          branding_logo: data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCA3NjAgMjIwIiByb2xlPSJpbWciIGFyaWEtbGFiZWw9IkZpdHBldCI+CiAgPHJlY3Qgd2lkdGg9Ijc2MCIgaGVpZ2h0PSIyMjAiIGZpbGw9Im5vbmUiLz4KICA8ZyBmaWxsPSIjMTY1NEYyIiBmb250LWZhbWlseT0iQXJpYWwgQmxhY2ssIEFyaWFsLCBzYW5zLXNlcmlmIiBmb250LXdlaWdodD0iOTAwIj4KICAgIDx0ZXh0IHg9IjIwIiB5PSIxNzIiIGZvbnQtc2l6ZT0iMTgwIiBsZXR0ZXItc3BhY2luZz0iMSI+RjwvdGV4dD4KICAgIDx0ZXh0IHg9IjIyMCIgeT0iMTcyIiBmb250LXNpemU9IjE4MCIgbGV0dGVyLXNwYWNpbmc9IjEiPlRQRVQ8L3RleHQ+CiAgPC9nPgogIDxwYXRoIGZpbGw9IiNGRjk4MDAiIGQ9Ik0xNDggMzBoNTZsLTEzIDExNWgtMzB6Ii8+CiAgPGNpcmNsZSBjeD0iMTc2IiBjeT0iMTc2IiByPSIyOCIgZmlsbD0iI0ZGOTgwMCIvPgo8L3N2Zz4K
+          branding_favicon: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAMAAAADACAIAAADdvvtQAAAAGXRFWHRTb2Z0d2FyZQBBZG9iZSBJbWFnZVJlYWR5ccllPAAABPdJREFUeNrs3U9uG2UYwGEHGalSQTiLLLoAJSxYIEQNGxYsYp8Ac4I0J6A5AEorDtD2ArQ9AeEEcRZsQ5AqkFgQFxZdZBGjtkokKpUPLAGKhBp7xjPvN/P8lpVrJfaj75/Hk5XO6GVHWrTXvAQCSAAJIAEkASSABJAAkgASQAJIAEkACSABJIAkgASQABJAAkgCSAAJIAEkASSABJAAkgASQAJIAEkACSABJIAEkASQABJAAkgCSAAph7qhfpre1U5/I/pLNn3eOTq+7IMHq+Pl/SRHT/vTF716X42VUH/uafBBZ/+r6IDGjzrDLy/74NPN1V53uqSfZHi4Pz4dmMKaXBoklvfkk7N1ayAVAHQOUNM7mA4arAegnIefM4BasQa6vqzNYN37L4Aq2fMv7W3+4VkfIBNN9gGU60ZpfLoJkFnMCKRXr6P7GT0tQAY2gJrVMs4Sg5wiAmRzB1AGa6DyzxLjLMwBynKxEuQUEaB2TTcA5QloCQveIKeIAGVsCCCzWJGFuTWQdbRdmGrZNIWaEAEyIRaq28iXeK6vbs29/pj/mdOmabe877uF+ni/mYDSe3z5r261fEI0heUA+mm/qb8aQPntwuKcIgJU4cq3oWeJAOW3dQo1IQKU3ywWahcGUGZbp2hTIUDtnQoByqmytk5GIBXqMUDtrKyt0/SPtwCyCysA8VmsQ+1mfhbW31jivRaPjjs7Xy+4fFm/MmnYS91MQL2rf92vM+AGqjig2u+qaQrLfhYDqKUVP0sM+Kk+QMYwgDKp+FliwI/0AcqpxwC1ueIrmGiniABltoKJdooIUH6DEEAGoSLL8AFAra55V0YDlM02Kub0B1C1U1iBbVTMT0IAqnYRXWAbFXP6A6gV0x9ADanINirgKSJAbZn+AGqQg2adJQJU+UZs0c1UwFNEgGqoYWeJAOWxmQo78QFU+RS20GYq7PXUAOWxmQo78XWb+j4t7x6J0+dFd2HDw/25AZ0BVG3jR3F3YTH3U6YwASSABJAEkAASQAJIAkgACSA1rq6XoPZ63Wn/zaP+G0e913/v/H0boemLXi5XvgJUp5sb1x5sXXuY9Pz332d/HHNyvr53Mrr36xfBr2A0hdVTonP86cad93Yu6Pmn9SuTm2/fnT0mUQNI/w4833z4+f33ty/JIjH6/pOP/s8ZQK3Ts//xcLS2N9f/SqNR+l8xDQFUaWngWczBTF7AG90DVF1pMpp37LlgKPkDqIoCXs+a3v7dd28XfJLB6jitvgFq5fDzzr1SNlPFFQKUZVsljRxpGRRqNQ1QFaW3vMT172jtW4Da1aA3LvHZNkt9NoAyaPYhV4nrcYBUaEIESIsX6kYLAOVXqCs9AKrmLb9uBFKUMeOg8B+uAyizJufrJd6RY+9kBFDrevhkq5TnefDkRqhrFAGqqPTGlzKR3f5lN9TvBVB1bf90v6ie41vRLpEGqNKl9PaPixtKS59bwYYfgGqYyBYzlPQUwbe8Vjqjl97Xihut7V3+ovrU3d9u7vx8J+bvYgSqoTScbHx3nEajVz4ybf6Hh/th9RiBam723cLN1YMLFwwlNwfTwd7JZ/G/nwqQTGECSAAJIAkgASSABJAEkAASQAJIAkgACSABJAEkgASQABJAEkACSAAJIAkgASSABJAEkAASQAJIAkgACSABJIAkgASQABJAEkACSFn0pwADAPEEj0ldRy1mAAAAAElFTkSuQmCC
+          ui_theme: light
+          # 로그인 진입 flow. 명시적으로 고정한다.
+          # 블루프린트에서 엔트리를 지워도 authentik DB 값은 되돌아오지 않으므로
+          # (#361 롤백 때 확인), 기본값에 의존하지 않고 여기에 못 박는다.
+          flow_authentication: !Find [authentik_flows.flow, [slug, default-authentication-flow]]
+          # Make the Google login option visually prominent on the initial login screen.
+          branding_custom_css: |
+            /* Keep a readable width for the custom ACME logo wordmark. */
+            .pf-c-brand img,
+            ak-brand img {
+              max-height: 56px;
+              width: auto;
+            }
+            /* Enlarge the social login button area (e.g., Google) to feel primary. */
+            .pf-c-login__main-footer-links a.pf-c-button,
+            .pf-c-login__main-footer-links button.pf-c-button {
+              width: 100%;
+              justify-content: center;
+              font-size: 18px;
+              padding: 12px 16px;
+              border: 1px solid rgba(255, 255, 255, 0.22);
+              background: rgba(255, 255, 255, 0.06);
+            }
+            .pf-c-login__main-footer-links a.pf-c-button:hover,
+            .pf-c-login__main-footer-links button.pf-c-button:hover {
+              background: rgba(255, 255, 255, 0.10);
+            }
+            /* Add some separation between the password form and the social login button. */
+            .pf-c-login__main-footer-links {
+              margin-top: 1rem;
+            }
+            /* In dark theme, app tile icons can become too dark; force a readable icon color. */
+            ak-app-icon {
+              --ak-global--Color--100: #f7f9fb;
+            }
+            /* Keep image-based app icons visually centered and large enough on tiles. */
+            ak-app-icon::part(image) {
+              width: 4rem;
+              height: 4rem;
+              object-fit: contain;
+            }
+
+  # Google OAuth Source + 로그인 화면 연결
+  google-oauth-source.yaml: |
+    version: 1
+    metadata:
+      name: Google OAuth Source v2
+      labels:
+        blueprints.goauthentik.io/instantiate: "true"
+    entries:
+      - model: authentik_sources_oauth.oauthsource
+        id: google-oauth
+        state: present
+        identifiers:
+          slug: google
+        attrs:
+          name: Google
+          slug: google
+          enabled: true
+          provider_type: google
+          consumer_key: "000000000000-example.apps.googleusercontent.com"
+          consumer_secret: !Env AUTHENTIK_GOOGLE_OAUTH_SECRET
+          # MFA는 Google Workspace(IdP) 쪽에서 담당한다. authentik에서 한 번 더 걸지 않는다.
+          # 과거 acme-source-authentication-mfa 플로우를 붙이려 했으나 아래 사유로 폐기:
+          #   1) 이 플로우는 Google SSO 경로에만 붙어 이미 Google이 MFA를 강제하는 구간과 중복
+          #   2) 정작 패스워드 로그인이 가능한 로컬 계정(akadmin)은 이 경로를 타지 않아 미보호
+          #   3) 엔트리 순서 오류(전방 참조)로 애초에 한 번도 생성된 적 없음 — 아래 NOTE 참조
+          authentication_flow: !Find [authentik_flows.flow, [slug, default-source-authentication]]
+          enrollment_flow: !Find [authentik_flows.flow, [slug, default-source-enrollment]]
+
+      # NOTE: !KeyOf 는 "이미 적용된" 엔트리만 참조할 수 있다. 위 oauthsource가 첫 엔트리인데
+      # 뒤쪽에 정의된 flow를 !KeyOf 로 참조하고 있어(전방 참조) 첫 엔트리부터 실패했고,
+      # 그 결과 이 블루프린트 전체가 적용되지 않았다. 참조는 항상 정의보다 뒤에 와야 한다.
+
+      # The public login page uses default-authentication-flow; update its header text too.
+      - model: authentik_flows.flow
+        state: present
+        identifiers:
+          slug: default-authentication-flow
+        attrs:
+          title: Welcome to Acme!
+
+      # 위 MFA 플로우에 딸려 있던 엔트리(expressionpolicy acme-source-authentication-if-sso,
+      # flowstagebinding 2건, policybinding 1건)는 함께 제거했다. 대상 플로우가 없어졌고,
+      # 애초에 생성된 적이 없어 클러스터에도 남은 객체가 없다.
+
+      # Make Google the primary login option on the initial authentik login screen.
+      # This updates the built-in identification stage so the Google source appears first
+      # and with a label (not just a small icon).
+      - model: authentik_stages_identification.identificationstage
+        state: present
+        identifiers:
+          name: default-authentication-identification
+        attrs:
+          sources:
+            - !KeyOf google-oauth
+          show_source_labels: true
+          # Keep source ordering, but avoid immediate redirect by keeping identifier fields enabled.
+          user_fields:
+            - email
+            - username
+          case_insensitive_matching: true
+
+  # Force-apply login page behavior as a separate blueprint instance.
+  google-login-primary-v1.yaml: |
+    version: 1
+    metadata:
+      name: Google Login Primary v1
+      labels:
+        blueprints.goauthentik.io/instantiate: "true"
+    entries:
+      - model: authentik_flows.flow
+        state: present
+        identifiers:
+          slug: default-authentication-flow
+        attrs:
+          title: Welcome to Acme!
+
+      - model: authentik_stages_identification.identificationstage
+        state: present
+        identifiers:
+          name: default-authentication-identification
+        attrs:
+          user_fields:
+            - email
+            - username
+          show_source_labels: true
+
+  # ArgoCD OIDC Provider + Application (User Library 노출, reapply trigger v2)
+  argocd-application.yaml: |
+    version: 1
+    metadata:
+      name: ArgoCD Application
+      labels:
+        blueprints.goauthentik.io/instantiate: "true"
+    entries:
+      - model: authentik_providers_oauth2.scopemapping
+        id: argocd-groups-scope
+        state: present
+        identifiers:
+          name: ArgoCD Groups Scope
+        attrs:
+          name: ArgoCD Groups Scope
+          scope_name: groups
+          description: "Include user groups in token for ArgoCD RBAC"
+          expression: |
+            return [group.name for group in request.user.ak_groups.all()]
+
+      - model: authentik_providers_oauth2.oauth2provider
+        id: argocd-oauth-provider
+        state: present
+        identifiers:
+          name: ArgoCD
+        attrs:
+          name: ArgoCD
+          # public: CLI(PKCE)와 웹 모두 동일 client_id 사용. client_secret은 웹에서 전달되지만 무시됨
+          client_type: public
+          client_id: argocd
+          client_secret: !Env AUTHENTIK_ARGOCD_OAUTH_SECRET
+          authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+          invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+          redirect_uris:
+            - matching_mode: strict
+              url: https://argocd.acme.example/auth/callback
+            - matching_mode: strict
+              url: https://argocd.dev.acme.example/auth/callback
+            # ArgoCD CLI SSO login (argocd login --sso)
+            - matching_mode: regex
+              url: "http://localhost:.*/auth/callback"
+          property_mappings:
+            - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-openid]]
+            - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-email]]
+            - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-profile]]
+            - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-offline_access]]
+            - !KeyOf argocd-groups-scope
+          signing_key: !Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]
+
+      - model: authentik_core.application
+        state: present
+        identifiers:
+          slug: argocd
+        attrs:
+          name: ArgoCD
+          slug: argocd
+          icon: /media/public/icons/argocd.svg
+          group: Production
+          provider: !KeyOf argocd-oauth-provider
+          # Direct SSO start endpoint (skips ArgoCD login page "Login via SSO" click)
+          meta_launch_url: https://argocd.acme.example/auth/login
+          open_in_new_tab: true
+
+      - model: authentik_core.application
+        state: present
+        identifiers:
+          slug: argocd-dev
+        attrs:
+          name: ArgoCD
+          slug: argocd-dev
+          icon: /media/public/icons/argocd.svg
+          # NOTE: Provider는 Application과 1:1이라(Unique) dev/prod 2개 앱에 동일 provider를 붙일 수 없음.
+          # dev 아이콘은 링크 전용으로 두고, 실제 OIDC는 ArgoCD 설정(redirect_uri 포함)으로 동작시킴.
+          group: Development
+          meta_launch_url: https://argocd.dev.acme.example/auth/login
+          open_in_new_tab: true
+
+      # ArgoCD CLI - 포털 타일 숨김.
+      # `argocd login --sso` 는 위 argocd provider의 localhost redirect URI로 동작하므로
+      # 이 앱/프로바이더는 실사용되지 않는다 (711b9531에서 blueprint만 제거되고 DB row는 남음).
+      # blueprint로 다시 편입해 라이브러리에서 감춘다. launch URL이 http(s)/상대경로가
+      # 아니면 타일이 노출되지 않는다 (authentik 공식 관용구).
+      - model: authentik_core.application
+        state: present
+        identifiers:
+          slug: argocd-cli
+        attrs:
+          name: ArgoCD CLI
+          slug: argocd-cli
+          group: Tools
+          provider: !Find [authentik_providers_oauth2.oauth2provider, [name, ArgoCD CLI]]
+          meta_launch_url: blank://blank
+
+  grafana-application.yaml: |
+    version: 1
+    metadata:
+      name: Grafana Application
+      labels:
+        blueprints.goauthentik.io/instantiate: "true"
+    entries:
+      - model: authentik_providers_oauth2.oauth2provider
+        id: grafana-oauth-provider
+        state: present
+        identifiers:
+          name: Grafana
+        attrs:
+          name: Grafana
+          client_id: grafana
+          client_secret: !Env AUTHENTIK_GRAFANA_OAUTH_SECRET
+          authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+          invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+          redirect_uris:
+            - matching_mode: strict
+              url: https://grafana.acme.example/login/generic_oauth
+            - matching_mode: strict
+              url: https://grafana.dev.acme.example/login/generic_oauth
+          property_mappings:
+            - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-openid]]
+            - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-email]]
+            - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-profile]]
+          signing_key: !Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]
+
+      - model: authentik_core.application
+        state: present
+        identifiers:
+          slug: grafana
+        attrs:
+          name: Grafana
+          slug: grafana
+          icon: /media/public/icons/grafana.svg
+          group: Production
+          provider: !KeyOf grafana-oauth-provider
+          meta_launch_url: https://grafana.acme.example
+          open_in_new_tab: true
+
+      - model: authentik_core.application
+        state: present
+        identifiers:
+          slug: grafana-dev
+        attrs:
+          name: Grafana
+          slug: grafana-dev
+          icon: /media/public/icons/grafana.svg
+          # NOTE: Provider는 Application과 1:1이라(Unique) dev/prod 2개 앱에 동일 provider를 붙일 수 없음.
+          # dev 아이콘은 링크 전용으로 두고, 실제 OIDC는 Grafana 설정(redirect_uri 포함)으로 동작시킴.
+          group: Development
+          meta_launch_url: https://grafana.dev.acme.example
+          open_in_new_tab: true
+
+  airflow-green-application.yaml: |
+    version: 1
+    metadata:
+      name: Airflow Green Application
+      labels:
+        blueprints.goauthentik.io/instantiate: "true"
+    entries:
+      - model: authentik_providers_oauth2.oauth2provider
+        id: airflow-green-oauth-provider
+        state: present
+        identifiers:
+          name: Airflow Green
+        attrs:
+          name: Airflow Green
+          client_id: airflow-green
+          client_secret: !Env AUTHENTIK_AIRFLOW_GREEN_OAUTH_SECRET
+          authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+          invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+          redirect_uris:
+            - matching_mode: strict
+              url: https://airflow-green.acme.example/auth/oauth-authorized/authentik
+          property_mappings:
+            - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-openid]]
+            - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-email]]
+            - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-profile]]
+            - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-offline_access]]
+          signing_key: !Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]
+
+      - model: authentik_core.application
+        state: present
+        identifiers:
+          slug: airflow-green
+        attrs:
+          name: Airflow Green
+          slug: airflow-green
+          icon: /media/public/icons/airflow.svg
+          group: Production
+          provider: !KeyOf airflow-green-oauth-provider
+          meta_launch_url: https://airflow-green.acme.example
+          open_in_new_tab: true
+
+  # Argo Workflows OIDC Provider + Application
+  argo-workflows-application.yaml: |
+    version: 1
+    metadata:
+      name: Argo Workflows Application
+      labels:
+        blueprints.goauthentik.io/instantiate: "true"
+    entries:
+      - model: authentik_providers_oauth2.oauth2provider
+        id: argo-workflows-oauth-provider
+        state: present
+        identifiers:
+          name: Argo Workflows
+        attrs:
+          name: Argo Workflows
+          client_id: argo-workflows
+          client_secret: !Env AUTHENTIK_ARGO_WORKFLOWS_OAUTH_SECRET
+          authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+          invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+          redirect_uris:
+            - matching_mode: strict
+              url: https://argo-workflows.acme.example/oauth2/callback
+            - matching_mode: strict
+              url: https://argo-workflows.dev.acme.example/oauth2/callback
+          property_mappings:
+            - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-openid]]
+            - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-email]]
+            - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-profile]]
+            - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-offline_access]]
+          signing_key: !Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]
+
+      - model: authentik_core.application
+        state: present
+        identifiers:
+          slug: argo-workflows
+        attrs:
+          name: Argo Workflows
+          slug: argo-workflows
+          icon: /media/public/icons/argo-workflows.svg
+          group: Production
+          provider: !KeyOf argo-workflows-oauth-provider
+          meta_launch_url: https://argo-workflows.acme.example
+          open_in_new_tab: true
+
+      - model: authentik_core.application
+        state: present
+        identifiers:
+          slug: argo-workflows-dev
+        attrs:
+          name: Argo Workflows
+          slug: argo-workflows-dev
+          icon: /media/public/icons/argo-workflows.svg
+          # NOTE: Provider는 Application과 1:1이라(Unique) dev/prod 2개 앱에 동일 provider를 붙일 수 없음.
+          # dev 아이콘은 링크 전용으로 두고, 실제 OIDC는 Argo Workflows 설정(redirect_uri 포함)으로 동작시킴.
+          group: Development
+          meta_launch_url: https://argo-workflows.dev.acme.example
+          open_in_new_tab: true
+
+  # AWS Classic IAM (dev) SAML Provider + Application
+  # admin 전용:
+  # 1) 앱 접근은 "main" 그룹으로 제한
+  # 2) Role assertion도 동일 그룹 prefix("AWS:") 기반으로 생성
+  aws-dev-application.yaml: |
+    version: 1
+    metadata:
+      name: AWS Dev Application
+      labels:
+        blueprints.goauthentik.io/instantiate: "true"
+    entries:
+      - model: authentik_core.group
+        id: aws-dev-admin-group
+        state: present
+        identifiers:
+          name: main
+        attrs:
+          name: main
+
+      # Legacy groups cleanup (merged into "main")
+      - model: authentik_core.group
+        state: absent
+        identifiers:
+          name: "AWS:authentik-admin"
+
+      - model: authentik_core.group
+        state: absent
+        identifiers:
+          name: developer
+
+      - model: authentik_core.group
+        state: absent
+        identifiers:
+          name: devops-admin
+
+      - model: authentik_core.group
+        state: absent
+        identifiers:
+          name: "authentik Read-only"
+
+      - model: authentik_providers_saml.samlpropertymapping
+        id: aws-dev-role-mapping
+        state: present
+        identifiers:
+          name: AWS Dev Role Mapping
+        attrs:
+          name: AWS Dev Role Mapping
+          saml_name: https://aws.amazon.com/SAML/Attributes/Role
+          expression: |
+            ACCOUNT_ID = "111111111111"
+            PROVIDER_NAME = "authentik"
+            if ak_is_group_member(request.user, name="main") or ak_is_group_member(request.user, name="authentik Admins"):
+                return [
+                    f"arn:aws:iam::{ACCOUNT_ID}:role/authentik-admin,arn:aws:iam::{ACCOUNT_ID}:saml-provider/{PROVIDER_NAME}"
+                ]
+            return []
+
+      - model: authentik_providers_saml.samlpropertymapping
+        id: aws-dev-role-session-name
+        state: present
+        identifiers:
+          name: AWS Dev Role Session Name
+        attrs:
+          name: AWS Dev Role Session Name
+          saml_name: https://aws.amazon.com/SAML/Attributes/RoleSessionName
+          expression: |
+            return (request.user.email or request.user.username)
+
+      - model: authentik_providers_saml.samlprovider
+        id: aws-dev-saml-provider
+        state: present
+        identifiers:
+          name: AWS Dev
+        attrs:
+          name: AWS Dev
+          authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+          invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+          acs_url: https://signin.aws.amazon.com/saml
+          issuer: urn:amazon:webservices
+          audience: urn:amazon:webservices
+          default_relay_state: https://ap-northeast-2.console.aws.amazon.com/console/home?region=ap-northeast-2
+          default_name_id_policy: urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress
+          sp_binding: post
+          sign_assertion: true
+          sign_response: false
+          property_mappings:
+            - !KeyOf aws-dev-role-mapping
+            - !KeyOf aws-dev-role-session-name
+            - !Find [authentik_providers_saml.samlpropertymapping, [managed, goauthentik.io/providers/saml/email]]
+          signing_kp: !Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]
+
+      - model: authentik_core.application
+        id: aws-dev-application
+        state: present
+        identifiers:
+          slug: aws-dev
+        attrs:
+          name: AWS
+          slug: aws-dev
+          icon: /media/public/icons/aws.svg
+          group: Development
+          provider: !KeyOf aws-dev-saml-provider
+          meta_launch_url: https://sso.acme.example/application/saml/aws-dev/sso/binding/init/
+          open_in_new_tab: false
+          policy_engine_mode: all
+
+      - model: authentik_policies_expression.expressionpolicy
+        id: aws-dev-admin-access-policy
+        state: present
+        identifiers:
+          name: AWS Dev Admin Access Policy
+        attrs:
+          expression: |
+            return ak_is_group_member(request.user, name="main") or ak_is_group_member(request.user, name="authentik Admins")
+
+      - model: authentik_policies_expression.expressionpolicy
+        id: aws-dev-mfa-required-policy
+        state: present
+        identifiers:
+          name: AWS Dev MFA Required Policy
+        attrs:
+          expression: |
+            return True
+
+      - model: authentik_policies.policybinding
+        state: present
+        identifiers:
+          order: 0
+          target: !KeyOf aws-dev-application
+          policy: !KeyOf aws-dev-admin-access-policy
+
+      - model: authentik_policies.policybinding
+        state: present
+        identifiers:
+          order: 1
+          target: !KeyOf aws-dev-application
+          policy: !KeyOf aws-dev-mfa-required-policy
+
+  # AWS Classic IAM (prd) SAML Provider + Application
+  # admin 전용:
+  # 1) 앱 접근은 "main" 그룹으로 제한
+  # 2) Role assertion도 동일 그룹 prefix("AWS:") 기반으로 생성
+  aws-prd-application.yaml: |
+    version: 1
+    metadata:
+      name: AWS Prd Application
+      labels:
+        blueprints.goauthentik.io/instantiate: "true"
+    entries:
+      - model: authentik_providers_saml.samlpropertymapping
+        id: aws-prd-role-mapping
+        state: present
+        identifiers:
+          name: AWS Prd Role Mapping
+        attrs:
+          name: AWS Prd Role Mapping
+          saml_name: https://aws.amazon.com/SAML/Attributes/Role
+          expression: |
+            ACCOUNT_ID = "222222222222"
+            PROVIDER_NAME = "authentik"
+            if ak_is_group_member(request.user, name="main") or ak_is_group_member(request.user, name="authentik Admins"):
+                return [
+                    f"arn:aws:iam::{ACCOUNT_ID}:role/authentik-admin,arn:aws:iam::{ACCOUNT_ID}:saml-provider/{PROVIDER_NAME}"
+                ]
+            return []
+
+      - model: authentik_providers_saml.samlpropertymapping
+        id: aws-prd-role-session-name
+        state: present
+        identifiers:
+          name: AWS Prd Role Session Name
+        attrs:
+          name: AWS Prd Role Session Name
+          saml_name: https://aws.amazon.com/SAML/Attributes/RoleSessionName
+          expression: |
+            return (request.user.email or request.user.username)
+
+      - model: authentik_providers_saml.samlprovider
+        id: aws-prd-saml-provider
+        state: present
+        identifiers:
+          name: AWS Prd
+        attrs:
+          name: AWS Prd
+          authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+          invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+          acs_url: https://signin.aws.amazon.com/saml
+          issuer: urn:amazon:webservices
+          audience: urn:amazon:webservices
+          default_relay_state: https://ap-northeast-2.console.aws.amazon.com/console/home?region=ap-northeast-2
+          default_name_id_policy: urn:oasis:names:tc:SAML:1.1:nameid-format:emailAddress
+          sp_binding: post
+          sign_assertion: true
+          sign_response: false
+          property_mappings:
+            - !KeyOf aws-prd-role-mapping
+            - !KeyOf aws-prd-role-session-name
+            - !Find [authentik_providers_saml.samlpropertymapping, [managed, goauthentik.io/providers/saml/email]]
+          signing_kp: !Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]
+
+      - model: authentik_core.application
+        id: aws-prd-application
+        state: present
+        identifiers:
+          slug: aws-prd
+        attrs:
+          name: AWS
+          slug: aws-prd
+          icon: /media/public/icons/aws.svg
+          group: Production
+          provider: !KeyOf aws-prd-saml-provider
+          meta_launch_url: https://sso.acme.example/application/saml/aws-prd/sso/binding/init/
+          open_in_new_tab: false
+          policy_engine_mode: all
+
+      - model: authentik_policies_expression.expressionpolicy
+        id: aws-prd-admin-access-policy
+        state: present
+        identifiers:
+          name: AWS Prd Admin Access Policy
+        attrs:
+          expression: |
+            return ak_is_group_member(request.user, name="main") or ak_is_group_member(request.user, name="authentik Admins")
+
+      - model: authentik_policies_expression.expressionpolicy
+        id: aws-prd-mfa-required-policy
+        state: present
+        identifiers:
+          name: AWS Prd MFA Required Policy
+        attrs:
+          expression: |
+            return True
+
+      - model: authentik_policies.policybinding
+        state: present
+        identifiers:
+          order: 0
+          target: !KeyOf aws-prd-application
+          policy: !KeyOf aws-prd-admin-access-policy
+
+      - model: authentik_policies.policybinding
+        state: present
+        identifiers:
+          order: 1
+          target: !KeyOf aws-prd-application
+          policy: !KeyOf aws-prd-mfa-required-policy
+
+  # AWS CLI OIDC Provider + Application
+  # CLI/LLM用: ブラウザ認証1回 → refresh tokenで12時間自動更新
+  # public client (PKCE) - CLI はclient_secretを安全に保持できないため
+  # groups scope mapping で IAM trust policy の条件に使用
+  aws-cli-oidc-application.yaml: |
+    version: 1
+    metadata:
+      name: AWS CLI OIDC Application
+      labels:
+        blueprints.goauthentik.io/instantiate: "true"
+    entries:
+      # Custom scope mapping: groups claim in id_token
+      - model: authentik_providers_oauth2.scopemapping
+        id: aws-cli-groups-scope
+        state: present
+        identifiers:
+          name: AWS CLI Groups Scope
+        attrs:
+          name: AWS CLI Groups Scope
+          scope_name: groups
+          description: "Include user groups in token for AWS IAM trust policy"
+          expression: |
+            return [group.name for group in request.user.ak_groups.all()]
+
+      # OAuth2 Provider (public client, PKCE enforced)
+      - model: authentik_providers_oauth2.oauth2provider
+        id: aws-cli-oidc-provider
+        state: present
+        identifiers:
+          name: AWS CLI
+        attrs:
+          name: AWS CLI
+          client_type: public
+          client_id: aws-cli
+          authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+          invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+          redirect_uris:
+            - matching_mode: regex
+              url: "http://localhost:.*"
+          property_mappings:
+            - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-openid]]
+            - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-email]]
+            - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-profile]]
+            - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-offline_access]]
+            - !KeyOf aws-cli-groups-scope
+          signing_key: !Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]
+          # Refresh token validity: 12h (credential_process auto-renewal)
+          refresh_token_validity: "hours=12"
+          # Access token validity: 1h
+          access_token_validity: "hours=1"
+          # Include groups in id_token (not just userinfo)
+          include_claims_in_id_token: true
+          sub_mode: user_email
+
+      # Application (User Library 노출)
+      - model: authentik_core.application
+        id: aws-cli-application
+        state: present
+        identifiers:
+          slug: aws-cli
+        attrs:
+          name: AWS CLI
+          slug: aws-cli
+          icon: /media/public/icons/terminal.svg
+          group: Tools
+          provider: !KeyOf aws-cli-oidc-provider
+          # 라이브러리에서 숨김. authentik은 launch URL이 http(s)/상대경로일 때만 타일을 노출하므로
+          # 의도적으로 무효한 스킴을 넣는다 (authentik 공식 관용구).
+          # 이전 값 hide_application 은 URL 검증에 걸려 블루프린트 전체 apply가 실패했음.
+          meta_launch_url: blank://blank
+          policy_engine_mode: all
+
+      # Removed: aws-cli-dev, aws-cli-prd link-only apps (불필요)
+      - model: authentik_core.application
+        state: absent
+        identifiers:
+          slug: aws-cli-dev
+
+      - model: authentik_core.application
+        state: absent
+        identifiers:
+          slug: aws-cli-prd
+
+      - model: authentik_policies_expression.expressionpolicy
+        id: aws-cli-access-policy
+        state: present
+        identifiers:
+          name: AWS CLI Access Policy
+        attrs:
+          expression: |
+            return ak_is_group_member(request.user, name="main") or ak_is_group_member(request.user, name="authentik Admins")
+
+      - model: authentik_policies.policybinding
+        state: present
+        identifiers:
+          order: 0
+          target: !KeyOf aws-cli-application
+          policy: !KeyOf aws-cli-access-policy
+
+  # Kubecost OIDC Provider + Application (dev only, ForwardAuth via oauth2-proxy)
+  kubecost-application.yaml: |
+    version: 1
+    metadata:
+      name: Kubecost Application
+      labels:
+        blueprints.goauthentik.io/instantiate: "true"
+    entries:
+      - model: authentik_providers_oauth2.oauth2provider
+        id: kubecost-oauth-provider
+        state: present
+        identifiers:
+          name: Kubecost
+        attrs:
+          name: Kubecost
+          client_id: kubecost
+          client_secret: !Env AUTHENTIK_KUBECOST_OAUTH_SECRET
+          authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+          invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+          redirect_uris:
+            - matching_mode: strict
+              url: https://kubecost.dev.acme.example/oauth2/callback
+            - matching_mode: strict
+              url: https://kubecost.acme.example/oauth2/callback
+          property_mappings:
+            - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-openid]]
+            - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-email]]
+            - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-profile]]
+          signing_key: !Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]
+
+      - model: authentik_core.application
+        state: present
+        identifiers:
+          slug: kubecost
+        attrs:
+          name: Kubecost
+          slug: kubecost
+          icon: https://raw.githubusercontent.com/kubecost/.github/9602bea0c06773da66ba43cb9ce5e1eb2b797c32/kubecost_logo.png
+          group: Development
+          provider: !KeyOf kubecost-oauth-provider
+          meta_launch_url: https://kubecost.dev.acme.example
+          open_in_new_tab: true
+
+  kafka-ui-application.yaml: |
+    version: 1
+    metadata:
+      name: Kafka UI Application
+      labels:
+        blueprints.goauthentik.io/instantiate: "true"
+    entries:
+      # 링크 전용 (SSO 미연동 — kafka.dev.acme.example은 회사 IP allowlist로 보호됨)
+      - model: authentik_core.application
+        state: present
+        identifiers:
+          slug: kafka-ui-dev
+        attrs:
+          name: Kafka UI
+          slug: kafka-ui-dev
+          icon: /media/public/icons/kafka.svg
+          group: Development
+          meta_launch_url: https://kafka.dev.acme.example
+          open_in_new_tab: true
+
+  # Outline Wiki OIDC Provider + Application
+  outline-application.yaml: |
+    version: 1
+    metadata:
+      name: Outline Application
+      labels:
+        blueprints.goauthentik.io/instantiate: "true"
+    entries:
+      - model: authentik_providers_oauth2.oauth2provider
+        id: outline-oauth-provider
+        state: present
+        identifiers:
+          name: Outline
+        attrs:
+          name: Outline
+          client_id: outline
+          client_secret: !Env AUTHENTIK_OUTLINE_OAUTH_SECRET
+          authorization_flow: !Find [authentik_flows.flow, [slug, default-provider-authorization-implicit-consent]]
+          invalidation_flow: !Find [authentik_flows.flow, [slug, default-provider-invalidation-flow]]
+          redirect_uris:
+            - matching_mode: strict
+              url: https://wiki.acme.example/auth/oidc.callback
+          property_mappings:
+            - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-openid]]
+            - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-email]]
+            - !Find [authentik_providers_oauth2.scopemapping, [managed, goauthentik.io/providers/oauth2/scope-profile]]
+          signing_key: !Find [authentik_crypto.certificatekeypair, [name, authentik Self-signed Certificate]]
+
+      - model: authentik_core.application
+        state: present
+        identifiers:
+          slug: outline
+        attrs:
+          name: Outline Wiki
+          slug: outline
+          icon: /media/public/icons/outline.svg
+          group: Production
+          provider: !KeyOf outline-oauth-provider
+          meta_launch_url: https://wiki.acme.example
+          open_in_new_tab: true
+
+  # Plane (dev) OIDC Provider + Application — 미사용으로 비활성화 (2026-05-14)
+  # ArgoCD plane Application(argocd/dev/apps/tools/plane.yaml)도 동시에 비활성.
+  # state: absent 로 두면 authentik이 launcher 아이콘과 provider를 DB에서 제거.
+  # 다시 띄우려면 state: absent → state: present 로 되돌리고 ArgoCD app도 복원.
+  plane-dev-application.yaml: |
+    version: 1
+    metadata:
+      name: Plane Dev Application
+      labels:
+        blueprints.goauthentik.io/instantiate: "true"
+    entries:
+      - model: authentik_core.application
+        state: absent
+        identifiers:
+          slug: plane-dev
+      - model: authentik_providers_oauth2.oauth2provider
+        state: absent
+        identifiers:
+          name: Plane (dev)
+
+  # ERP - Link only (SSO 미지원, 직접 로그인 필요)
+  erp-application.yaml: |
+    version: 1
+    metadata:
+      name: erp Application
+      labels:
+        blueprints.goauthentik.io/instantiate: "true"
+    entries:
+      - model: authentik_core.application
+        state: present
+        identifiers:
+          slug: erp
+        attrs:
+          name: ERP
+          slug: erp
+          icon: /media/public/icons/erp.svg
+          group: Production
+          meta_launch_url: https://erp.example/login
+          open_in_new_tab: true
+
+  # Wiki (Google Sites) - Link only (Google Workspace 인증으로 자동 접근)
+  wiki-application.yaml: |
+    version: 1
+    metadata:
+      name: Wiki Application
+      labels:
+        blueprints.goauthentik.io/instantiate: "true"
+    entries:
+      - model: authentik_core.application
+        state: present
+        identifiers:
+          slug: wiki
+        attrs:
+          name: Wiki
+          slug: wiki
+          icon: /media/public/icons/googlesites.svg
+          group: Production
+          meta_launch_url: https://sites.google.com/acme-corp.example/wiki/home
+          open_in_new_tab: true
+
+  # Datadog - Link only (SAML SSO는 Enterprise 플랜 필요, 현재 Pro)
+  datadog-application.yaml: |
+    version: 1
+    metadata:
+      name: Datadog Application
+      labels:
+        blueprints.goauthentik.io/instantiate: "true"
+    entries:
+      - model: authentik_core.application
+        state: present
+        identifiers:
+          slug: datadog
+        attrs:
+          name: Datadog
+          slug: datadog
+          icon: /media/public/icons/datadog.svg
+          group: Production
+          meta_launch_url: https://app.datadoghq.com
+          open_in_new_tab: true
+
+  # Google SSO 최초 로그인 시 external로 생성되는 유저를 internal로 자동 변경
+  # 배경: external 유저는 authentik 대시보드/앱 접근이 제한되어 수동 변경이 필요했음
+  # 방법: 기존 default-source-enrollment-write 스테이지의 user_type을 internal로 직접 수정
+  # v2: non-dev 그룹을 이 블루프린트 내에서 먼저 생성 후 !KeyOf로 참조
+  #     (이전 v1은 !Find로 non-dev 그룹 참조했으나, 알파벳 순서상 non-dev-access-control.yaml보다
+  #      먼저 실행되어 그룹이 없어 !Find가 실패함)
+  enrollment-internal-user.yaml: |
+    version: 1
+    metadata:
+      name: Enrollment - Auto Internal User Type v2
+      labels:
+        blueprints.goauthentik.io/instantiate: "true"
+    entries:
+      # non-dev 그룹을 먼저 생성 (enrollment write stage에서 !KeyOf로 참조)
+      # 이 blueprint가 non-dev-access-control.yaml보다 알파벳 순서상 먼저 실행되므로
+      # 여기서 그룹을 생성해야 !Find 실패를 피할 수 있음
+      - model: authentik_core.group
+        id: non-dev-group
+        state: present
+        identifiers:
+          name: non-dev
+        attrs:
+          name: non-dev
+
+      # 이전에 추가했던 order=100 스테이지 제거 (효과 없었음)
+      - model: authentik_stages_user_write.userwritestage
+        state: absent
+        identifiers:
+          name: acme-enrollment-write-internal
+
+      # 기존 enrollment write 스테이지를 직접 internal로 변경 (order=1에서 실제로 유저 생성)
+      # create_users_group: Google SSO 최초 로그인 시 자동으로 non-dev 그룹 배정 (wiki만 접근)
+      # 개발자는 수동으로 main 그룹에 추가
+      # !KeyOf를 사용하여 이 blueprint에서 생성한 non-dev 그룹을 참조 (!Find 의존성 제거)
+      - model: authentik_stages_user_write.userwritestage
+        state: present
+        identifiers:
+          name: default-source-enrollment-write
+        attrs:
+          user_type: internal
+          create_users_as_inactive: false
+          create_users_group: !KeyOf non-dev-group
+
+      # 서비스 계정 Google SSO 가입 차단
+      # 새 이메일 차단 시 BLOCKED_EMAILS 리스트에 추가
+      - model: authentik_policies_expression.expressionpolicy
+        id: block-service-accounts-policy
+        state: present
+        identifiers:
+          name: Block Service Accounts
+        attrs:
+          expression: |
+            BLOCKED_EMAILS = [
+                "datadog-read@acme-corp.example",
+            ]
+            email = request.context.get("prompt_data", {}).get("email", "")
+            if not email:
+                email = getattr(request.user, "email", "")
+            return email.lower() not in [e.lower() for e in BLOCKED_EMAILS]
+
+      # policybinding 자체는 blueprint 선언에서 제거 (이미 DB에 동일하게 존재 - 기능 영향 없음)
+      # 원인: authentik !Find 태그가 PolicyBindingModel(Flow)의 target을 pk로 resolve하지만
+      #       실제 PolicyBinding.target 컬럼은 pbm_uuid를 참조 → identifiers 매칭 실패
+      #       → 매번 신규 생성 시도 → (policy, target, order) unique 제약 위반으로 blueprint
+      #       전체가 status=error 처리되어, 같은 blueprint의 create_users_group 변경(non-dev)도
+      #       한 번도 실제 반영되지 못하고 있었음 (실측: 라이브 값이 여전히 main 그룹)
+
+  # 비개발자 롤 + 앱별 접근 제한
+  # non-dev 그룹: wiki(Outline)만 접근 가능 (Authentik 포털에서 wiki만 보임)
+  # main 그룹: 개발자 전용 앱 모두 접근 가능
+  # 신규 사용자 → non-dev 자동 배정, 개발자는 수동으로 main 그룹 추가
+  non-dev-access-control.yaml: |
+    version: 1
+    metadata:
+      name: Non-Dev Access Control
+      labels:
+        blueprints.goauthentik.io/instantiate: "true"
+    entries:
+      # non-dev 그룹 생성
+      - model: authentik_core.group
+        id: non-dev-group
+        state: present
+        identifiers:
+          name: non-dev
+        attrs:
+          name: non-dev
+
+      # 개발자 전용 앱 접근 정책 (main 그룹만)
+      - model: authentik_policies_expression.expressionpolicy
+        id: dev-only-access-policy
+        state: present
+        identifiers:
+          name: Dev Only Access Policy
+        attrs:
+          expression: |
+            return ak_is_group_member(request.user, name="main") or ak_is_group_member(request.user, name="authentik Admins")
+
+      # ArgoCD (prd) - main 그룹만
+      - model: authentik_policies.policybinding
+        state: present
+        identifiers:
+          order: 10
+          target: !Find [authentik_core.application, [slug, argocd]]
+          policy: !KeyOf dev-only-access-policy
+
+      # ArgoCD (dev) - main 그룹만
+      - model: authentik_policies.policybinding
+        state: present
+        identifiers:
+          order: 10
+          target: !Find [authentik_core.application, [slug, argocd-dev]]
+          policy: !KeyOf dev-only-access-policy
+
+      # Grafana (prd) - main 그룹만
+      - model: authentik_policies.policybinding
+        state: present
+        identifiers:
+          order: 10
+          target: !Find [authentik_core.application, [slug, grafana]]
+          policy: !KeyOf dev-only-access-policy
+
+      # Grafana (dev) - main 그룹만
+      - model: authentik_policies.policybinding
+        state: present
+        identifiers:
+          order: 10
+          target: !Find [authentik_core.application, [slug, grafana-dev]]
+          policy: !KeyOf dev-only-access-policy
+
+      # Airflow Green - main 그룹만
+      - model: authentik_policies.policybinding
+        state: present
+        identifiers:
+          order: 10
+          target: !Find [authentik_core.application, [slug, airflow-green]]
+          policy: !KeyOf dev-only-access-policy
+
+      # Argo Workflows (prd) - main 그룹만
+      - model: authentik_policies.policybinding
+        state: present
+        identifiers:
+          order: 10
+          target: !Find [authentik_core.application, [slug, argo-workflows]]
+          policy: !KeyOf dev-only-access-policy
+
+      # Argo Workflows (dev) - main 그룹만
+      - model: authentik_policies.policybinding
+        state: present
+        identifiers:
+          order: 10
+          target: !Find [authentik_core.application, [slug, argo-workflows-dev]]
+          policy: !KeyOf dev-only-access-policy
+
+      # Datadog - main 그룹만
+      - model: authentik_policies.policybinding
+        state: present
+        identifiers:
+          order: 10
+          target: !Find [authentik_core.application, [slug, datadog]]
+          policy: !KeyOf dev-only-access-policy
+
+      # NOTE: kubecost / kubecost-prd 바인딩 제거됨.
+      # dev kubecost 는 2026-06-08 철거(#260, #262)되며 authentik Application 도 사라졌고,
+      # kubecost-prd Application 은 애초에 생성된 적이 없다. 존재하지 않는 앱을 !Find 하면
+      # 이 블루프린트 전체가 apply 실패한다. prd kubecost 의 SSO 는 Application 이 아니라
+      # oauth2provider(client_id: kubecost)로 동작하므로 영향 없음.
+      # 복구가 필요하면 argocd/dev/infra/ops/kubecost.RESTORE.md 참조.
+
+      # ArgoCD CLI - main 그룹만 (앱 정의는 argocd-application.yaml, 포털에서는 숨김)
+      - model: authentik_policies.policybinding
+        state: present
+        identifiers:
+          order: 10
+          target: !Find [authentik_core.application, [slug, argocd-cli]]
+          policy: !KeyOf dev-only-access-policy
+
+      # Kafka UI (dev) - main 그룹만
+      - model: authentik_policies.policybinding
+        state: present
+        identifiers:
+          order: 10
+          target: !Find [authentik_core.application, [slug, kafka-ui-dev]]
+          policy: !KeyOf dev-only-access-policy

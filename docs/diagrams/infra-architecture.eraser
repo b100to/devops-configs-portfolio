@@ -1,0 +1,154 @@
+title Acme DevOps Infrastructure Architecture
+
+// ─── External Actors ───
+Developers [icon: users, label: "개발자 / 운영자"]
+EndUsers [icon: users, label: "End Users"]
+
+// ─── Source Control & CI/CD ───
+GitHub [icon: github] {
+  AppRepos [icon: github, label: "App Repositories\n(mall, venue, web, stockroom)"]
+  DevOpsRepo [icon: github, label: "devops-configs\n(GitOps single source of truth)"]
+}
+
+GitHubActions [icon: github-actions, label: "GitHub Actions"] {
+  AppCI [icon: play, label: "App CI/CD\nbuild → push ECR → update image tag"]
+  InfraDeploy [icon: play, label: "Infra Deploy\nTerramate + Terraform plan/apply"]
+}
+
+// ─── AWS Infrastructure ───
+AWS [icon: aws] {
+  Route53 [icon: aws-route-53, label: "Route53\n*.acme.example / *.dev.acme.example"]
+  ECR [icon: aws-ecr, label: "ECR\nmall / venue / web / stockroom / tools"]
+  SecretsManager [icon: aws-secrets-manager, label: "Secrets Manager"]
+  CloudTrail [icon: aws-cloudtrail]
+  IAM [icon: aws-iam, label: "IAM\nOIDC / SAML / Pod Identity (IRSA)"]
+
+  Network [color: grey] {
+    VPC [icon: aws-vpc, label: "VPC\ndev / prd"]
+    ALB [icon: aws-elb, label: "Application Load Balancer"]
+  }
+
+  EKS [icon: aws-eks, label: "EKS Cluster — acme-dev / acme-prd"] {
+
+    GitOps [color: green] {
+      ArgoCD [icon: argo, label: "ArgoCD\n(GitOps controller)"]
+      ImageUpdater [icon: argo, label: "ArgoCD Image Updater"]
+    }
+
+    Networking [color: blue] {
+      Traefik [icon: server, label: "Traefik v3\n(Ingress controller)"]
+      ALBController [icon: aws-elb, label: "AWS Load Balancer Controller"]
+      ExternalDNS [icon: aws-route-53, label: "External DNS"]
+    }
+
+    Auth [color: purple] {
+      Authentik [icon: lock, label: "Authentik IdP\nsso.acme.example"]
+      OAuth2Proxy [icon: shield, label: "oauth2-proxy\n(Kubecost 앞단)"]
+    }
+
+    Secrets [color: orange] {
+      ExternalSecrets [icon: key, label: "External Secrets Operator"]
+    }
+
+    Autoscaling [color: grey] {
+      Karpenter [icon: aws-ec2-auto-scaling, label: "Karpenter\n(Node autoscaler)"]
+      EBSController [icon: aws-ebs, label: "EBS CSI Controller"]
+    }
+
+    Observability [color: yellow] {
+      Datadog [icon: datadog, label: "Datadog\n(APM / Logs / Infra)"]
+      Prometheus [icon: prometheus]
+      Grafana [icon: grafana]
+      Loki [icon: grafana, label: "Loki\n(Log aggregation)"]
+      Kubecost [icon: dollar-sign, label: "Kubecost\n(비용 최적화)"]
+    }
+
+    Data [color: red] {
+      Kafka [icon: kafka, label: "Kafka\n(Message queue)"]
+      KafkaUI [icon: kafka, label: "Kafka UI"]
+      Redis [icon: redis, label: "Redis\n(Cache)"]
+      DBProxy [icon: aws-rds, label: "RDS Proxy\n(DB connection pool)"]
+    }
+
+    Workflows [color: teal] {
+      ArgoWorkflows [icon: argo, label: "Argo Workflows\n(dev + prd)"]
+      Airflow [icon: airflow, label: "Airflow\n(prd only)"]
+    }
+
+    Apps [color: blue] {
+      Mall [icon: shopping-cart, label: "Mall v3 / v4\napi, worker, consumer, batch"]
+      Venue [icon: heart, label: "Venue\ninspection, ins, member, play, studio (7 services)"]
+      Web [icon: globe, label: "Web / Homepage"]
+      Stockroom [icon: box, label: "Stockroom\n(prd only)"]
+    }
+
+  }
+}
+
+// ─── Traffic Flow ───
+EndUsers > Route53
+Developers > Route53
+Route53 > ALB
+ALB > ALBController
+ALBController > Traefik
+Traefik > Authentik
+Traefik > ArgoCD
+Traefik > Grafana
+Traefik > ArgoWorkflows
+Traefik > KafkaUI
+Traefik > OAuth2Proxy
+OAuth2Proxy > Kubecost
+Traefik > Apps
+
+// ─── GitOps Flow ───
+Developers --> GitHub
+AppRepos --> AppCI: code push → trigger
+DevOpsRepo --> InfraDeploy: .hcl/.tf 변경 → trigger
+AppCI --> ECR: docker push
+AppCI --> ImageUpdater: image tag 갱신
+ImageUpdater --> DevOpsRepo: commit image tag
+InfraDeploy --> AWS: terraform apply (changed stacks)
+DevOpsRepo --> ArgoCD: git sync
+ArgoCD --> Apps: deploy
+ArgoCD --> Workflows: deploy
+ArgoCD --> Data: deploy
+ArgoCD --> Observability: deploy
+
+// ─── Auth Flow ───
+Authentik <--> ArgoCD: OIDC
+Authentik <--> Grafana: OIDC
+Authentik <--> ArgoWorkflows: OIDC + Traefik Middleware
+Authentik <--> Airflow: OIDC
+Authentik <--> OAuth2Proxy: OIDC
+Authentik --> IAM: SAML (AWS Console dev/prd)
+Authentik --> IAM: OIDC (AWS CLI PKCE)
+
+// ─── Secrets Flow ───
+SecretsManager --> ExternalSecrets: pull credentials
+ExternalSecrets --> Apps: inject K8s Secret
+ExternalSecrets --> Workflows: inject K8s Secret
+ExternalSecrets --> Auth: inject K8s Secret
+
+// ─── Data Flow ───
+Apps > Kafka: produce / consume
+Apps > Redis: cache
+Apps > DBProxy: SQL query
+Mall > Kafka
+
+// ─── Observability Flow ───
+Apps --> Datadog: logs / APM traces
+Apps --> Prometheus: metrics scrape
+Prometheus --> Grafana: datasource
+Loki --> Grafana: log datasource
+CloudTrail --> Datadog: AWS audit events
+
+// ─── Infra Flow ───
+Karpenter --> EKS: EC2 node provisioning
+ExternalDNS --> Route53: DNS record 자동 등록
+EBSController --> EKS: PVC → EBS volume
+
+legend {
+  [connection: ">", label: "실시간 트래픽"]
+  [connection: "<->", label: "인증 플로우 (OAuth/SAML)"]
+  [connection: "-->", label: "비동기 / GitOps 싱크"]
+}

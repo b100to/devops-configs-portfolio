@@ -1,0 +1,112 @@
+clusterAgent:
+  replicas: 2
+  tokenExistingSecret: datadog-cluster-agent-token
+  topologySpreadConstraints:
+    - maxSkew: 1
+      topologyKey: topology.kubernetes.io/zone
+      whenUnsatisfiable: DoNotSchedule
+      labelSelector:
+        matchLabels:
+          app: datadog-cluster-agent
+    - maxSkew: 1
+      topologyKey: kubernetes.io/hostname
+      whenUnsatisfiable: DoNotSchedule
+      minDomains: 2
+      labelSelector:
+        matchLabels:
+          app: datadog-cluster-agent
+  resources:
+    requests:
+      cpu: 20m  # Kubecost 7d avg 11.7m / 0.6
+      memory: 235Mi  # Kubecost 7d avg 141Mi / 0.6
+    limits:
+      cpu: 100m
+      memory: 400Mi
+
+datadog:
+  # NOTE: `datadog.processingRules` 키는 Helm chart 3.x에서 존재하지 않음(차트가 무시)
+  # 글로벌 로그 가공 규칙은 `agents.containers.agent.env` 의 `DD_LOGS_CONFIG_PROCESSING_RULES` 로 주입
+  # 관련 env 정의는 파일 하단의 agents 섹션 참조
+
+  containerExclude: "name:.* kube_namespace:batch kube_namespace:argo"
+  containerInclude: "kube_namespace:mall kube_namespace:stockroom kube_namespace:venue kube_namespace:web"
+  containerExcludeMetrics: "name:.* kube_namespace:batch kube_namespace:argo"
+  containerIncludeMetrics: "kube_namespace:mall kube_namespace:stockroom kube_namespace:venue kube_namespace:web"
+  containerExcludeLogs: "name:.* kube_namespace:batch kube_namespace:argo"
+  containerIncludeLogs: "kube_namespace:mall kube_namespace:stockroom kube_namespace:venue kube_namespace:web"
+
+  clusterName: acme-main-v2-prd
+  apiKeyExistingSecret: datadog-api-key
+  appKeyExistingSecret: datadog-app-key
+
+  # Unified Service Tagging: 모든 로그/메트릭/트레이스에 env 태그 주입
+  tags:
+    - "env:prd"
+
+  # 기존 네임스페이스 태그 설정
+  namespaceAnnotationsAsTags:
+    env: prd
+  namespaceLabelsAsTags:
+    env: prd
+
+  # 노드 레이블을 태그로 수집
+  nodeLabelsAsTags:
+    node-group-type: "node_group_type"
+    karpenter.sh/nodepool: "karpenter_nodepool"
+    topology.kubernetes.io/zone: "availability_zone"
+    node.kubernetes.io/instance-type: "instance_type"
+    karpenter.sh/capacity-type: "capacity_type"
+    beta.kubernetes.io/instance-type: "beta_instance_type"
+    kubernetes.io/hostname: "kubernetes_hostname"
+  # Pod 레이블도 태그로 수집
+  podLabelsAsTags:
+    app: "app"
+    env: "env"
+    version: "version"
+    component: "component"
+    app.kubernetes.io/name: "app_name"
+    app.kubernetes.io/component: "app_component"
+
+  loglevel: ERROR
+  logs:
+    enabled: true
+    # containerIncludeLogs 필터(mall/stockroom/venue/web) 안의 컨테이너만 수집되도록
+    # 허용하되, annotation 누락으로 pipeline 진입이 막히던 이슈 해결차 collectAll=true.
+    # Datadog 규칙상 containerIncludeLogs 가 설정되어 있으면 그 매칭만 수집됨.
+    containerCollectAll: true
+    autoMultiLineDetection: true
+  apm:
+    enabled: true
+    portEnabled: true
+  processAgent:
+    processCollection: false
+    processDiscovery: true
+  systemProbe:
+    enableOOMKill: true
+
+agents:
+  containers:
+    agent:
+      logLevel: ERROR
+      # 글로벌 로그 가공 규칙 (JSON 배열을 env로 주입). chart 3.x는 datadog.processingRules 를 무시하므로 여기서 지정
+      # 효과:
+      #   - exclude_kube_probe: K8s liveness/readiness probe (UA=kube-probe) 제외 — stockroom frontend nginx 55K/day 대응
+      #   - exclude_health_checks: GIN/nginx/Spring actuator 등 다양한 헬스체크 경로 대응 — stockroom backend 26K/day 대응
+      # NOTE: extract_log_level / exclude_info_debug_trace 는 logback JSON `"level":"WARN"` 값까지 마스킹/매칭해서
+      #       파이프라인 status-remapper 가 동작 못하고 WARN 로그가 INFO 로 분류되는 문제가 있어 제거함.
+      env:
+        - name: DD_LOGS_CONFIG_PROCESSING_RULES
+          value: |-
+            [{"type":"exclude_at_match","name":"exclude_kube_probe","pattern":"kube-probe"},{"type":"exclude_at_match","name":"exclude_health_checks","pattern":"GET\\s+\"?/(health|healthz|ready|readyz|live|livez|metrics|actuator)"}]
+      resources:
+        requests:
+          cpu: 79m  # Kubecost 7d per-node avg ~47m / 0.6
+          memory: 312Mi  # Kubecost 7d per-node avg ~187Mi / 0.6
+        limits:
+          cpu: 300m
+          memory: 500Mi
+
+# 보안 설정
+podSecurity:
+  apparmor:
+    enabled: false

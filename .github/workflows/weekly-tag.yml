@@ -1,0 +1,53 @@
+name: Weekly Snapshot Tag
+
+on:
+  schedule:
+    - cron: "0 1 * * 1" # 매주 월요일 10:00 KST (UTC+9)
+  workflow_dispatch:
+
+jobs:
+  tag:
+    name: Create Weekly Snapshot Tag
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Check commits since last tag
+        id: check
+        run: |
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          if [ -z "$LAST_TAG" ]; then
+            COMMIT_COUNT=$(git rev-list HEAD --count)
+          else
+            COMMIT_COUNT=$(git rev-list "${LAST_TAG}..HEAD" --count)
+          fi
+          echo "last_tag=${LAST_TAG}" >> "$GITHUB_OUTPUT"
+          echo "commit_count=${COMMIT_COUNT}" >> "$GITHUB_OUTPUT"
+          echo "Last tag: ${LAST_TAG}, Commits since: ${COMMIT_COUNT}"
+
+      - name: Create weekly tag
+        if: steps.check.outputs.commit_count != '0'
+        run: |
+          WEEK=$(date -u +"%Y.W%V")
+          TAG="v${WEEK}"
+
+          # 같은 주 태그가 이미 있으면 skip
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag ${TAG} already exists, skipping."
+            exit 0
+          fi
+
+          LAST_TAG="${{ steps.check.outputs.last_tag }}"
+          COMMIT_COUNT="${{ steps.check.outputs.commit_count }}"
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "chore: weekly snapshot ${TAG} (${COMMIT_COUNT} commits since ${LAST_TAG:-initial})"
+          git push origin "$TAG"
+
+          echo "Created tag: ${TAG}"

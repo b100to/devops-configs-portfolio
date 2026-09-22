@@ -1,0 +1,148 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    app: member-api-test
+    env: dev
+  name: member-api-test
+  namespace: venue
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: member-api-test
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 3 # 3개씩 순차 생성
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: member-api-test
+        app.kubernetes.io/name: member-api-test
+        env: dev
+    spec:
+      containers:
+        - name: member-api-test
+          env:
+            - name: AWS_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  key: AWS_ACCESS_KEY_ID
+                  name: aws-account
+            - name: AWS_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  key: AWS_SECRET_ACCESS_KEY
+                  name: aws-account
+            - name: DD_TRACING_ENABLED
+              value: "false"
+            - name: DD_TRACE_ENABLED
+              value: "false"
+            - name: SPRING_PROFILES_ACTIVE
+              value: dev
+            # 🔥 극도로 절약된 JVM 설정
+            - name: JAVA_OPTS
+              value: >-
+                -server
+                -XX:+UseContainerSupport
+                -XX:MaxRAMPercentage=80.0
+                -XX:+UseG1GC
+                -XX:MaxGCPauseMillis=100
+                -XX:G1HeapRegionSize=4m
+                -XX:+UseStringDeduplication
+                -XX:+UseCompressedOops
+                -Djava.security.egd=file:/dev/./urandom
+                -Dspring.main.lazy-initialization=true
+                -Dspring.jmx.enabled=false
+                -Dlogging.level.root=ERROR
+                -Xms200m
+                -Xmx400m
+          image: b100to/member-api:latest
+          imagePullPolicy: Always
+
+          ports:
+            - containerPort: 8090
+              name: http
+              protocol: TCP
+
+          startupProbe:
+            httpGet:
+              path: /actuator/health
+              port: 8090
+              scheme: HTTP
+            initialDelaySeconds: 15
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 24 # 2분 대기
+
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8090
+              scheme: HTTP
+            initialDelaySeconds: 45
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8090
+              scheme: HTTP
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 2
+
+          # 🔥 t3.large에 10개 Pod를 위한 극절약 리소스
+          resources:
+            limits:
+              cpu: 500m # 🔥 절반으로 줄임 (500m × 10 = 5000m, 오버커밋)
+              memory: 600Mi # 🔥 40% 줄임 (600Mi × 10 = 6000Mi)
+            requests:
+              cpu: 80m # 🔥 더 절약 (80m × 10 = 800m)
+              memory: 400Mi # 🔥 20% 줄임 (400Mi × 10 = 4000Mi)
+
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - sh
+                  - -c
+                  - sleep 3
+
+      terminationGracePeriodSeconds: 20
+      priorityClassName: high-priority
+      restartPolicy: Always
+
+      nodeSelector:
+        karpenter.sh/nodepool: service
+
+      tolerations:
+        - effect: NoSchedule
+          key: node-group-type
+          operator: Equal
+          value: service
+
+      # 🔥 모든 Pod를 한 노드에 강제 배치
+      affinity:
+        nodeAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            nodeSelectorTerms:
+              - matchExpressions:
+                  - key: karpenter.sh/nodepool
+                    operator: In
+                    values: ["service"]
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution: # 강제가 아닌 선호도
+            - weight: 1 # 🔥 매우 낮은 가중치 (거의 무시)
+              podAffinityTerm:
+                labelSelector:
+                  matchExpressions:
+                    - key: app
+                      operator: In
+                      values: ["member-api-test"]
+                topologyKey: kubernetes.io/hostname

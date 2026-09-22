@@ -1,0 +1,117 @@
+{{- $common := .Values.commonValues }}
+{{- range $key, $value := .Values.app }}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ $.Release.Name }}-{{ $key }}
+  {{- if $common.namespace.name }}
+  namespace: {{ $common.namespace.name }}
+  {{- end }}
+  labels:
+    {{- include "batch.labels" $ | nindent 4 }}
+    cronjob-name: {{ $key }}
+  {{- if $common.annotations }}
+  annotations:
+    {{- toYaml $common.annotations | nindent 4 }}
+  {{- end }}
+spec:
+  successfulJobsHistoryLimit: {{ $value.successfulJobsHistoryLimit | default 0 }}
+  failedJobsHistoryLimit: {{ $value.failedJobsHistoryLimit | default 1 }}
+  concurrencyPolicy: {{ $value.concurrencyPolicy | default "Forbid" }}
+  {{- if $value.suspend }}
+  suspend: {{ $value.suspend }}
+  {{- end }}
+  schedule: {{ $value.schedule | quote }}
+  {{- if $value.timeZone }}
+  timeZone: {{ $value.timeZone | quote }}
+  {{- end }}
+  jobTemplate:
+    spec:
+      {{- if $value.backoffLimit }}
+      backoffLimit: {{ $value.backoffLimit }}
+      {{- end }}
+      {{- if $value.activeDeadlineSeconds }}
+      activeDeadlineSeconds: {{ $value.activeDeadlineSeconds }}
+      {{- end }}
+      {{- if $value.ttlSecondsAfterFinished }}
+      ttlSecondsAfterFinished: {{ $value.ttlSecondsAfterFinished }}
+      {{- end }}
+      template:
+        metadata:
+          {{- with $common.podAnnotations }}
+          annotations:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          labels:
+            {{- include "batch.podLabels" $ | nindent 12 }}
+            cronjob-name: {{ $key }}
+            {{- if $value.disableIstio }}
+            sidecar.istio.io/inject: "false"
+            {{- end }}
+        spec:
+          {{- with $common.imagePullSecrets }}
+          imagePullSecrets:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if $common.serviceAccount.name }}
+          serviceAccountName: {{ $common.serviceAccount.name }}
+          {{- end }}
+          {{- if $common.priorityClassName }}
+          priorityClassName: {{ $common.priorityClassName }}
+          {{- end }}
+          {{- if $common.securityContext }}
+          securityContext:
+            {{- toYaml $common.securityContext | nindent 12 }}
+          {{- end }}
+          {{- if $common.initContainers }}
+          initContainers:
+            {{- toYaml $common.initContainers | nindent 12 }}
+          {{- end }}
+          containers:
+          - name: {{ $key }}
+            {{- if $common.containerSecurityContext }}
+            securityContext:
+              {{- toYaml $common.containerSecurityContext | nindent 14 }}
+            {{- end }}
+            image: {{ include "batch.image" $ }}
+            imagePullPolicy: {{ $common.image.pullPolicy | default "IfNotPresent" }}
+            {{- if $value.command }}
+            command:
+              {{- toYaml $value.command | nindent 14 }}
+            {{- end }}
+            {{- if $value.args }}
+            args:
+              {{- toYaml $value.args | nindent 14 }}
+            {{- end }}
+            {{- if $common.resources }}
+            resources:
+              {{- toYaml $common.resources | nindent 14 }}
+            {{- end }}
+            {{- if or $common.env $common.envFrom $common.aws.enabled }}
+            env:
+              {{- include "batch.env" $ | nindent 14 }}
+            {{- end }}
+            {{- if $common.envFrom }}
+            envFrom:
+              {{- toYaml $common.envFrom | nindent 14 }}
+            {{- end }}
+            {{- if $common.volumeMounts }}
+            volumeMounts:
+              {{- include "batch.volumeMounts" $ | nindent 14 }}
+            {{- end }}
+          restartPolicy: {{ $value.restartPolicy | default "Never" }}
+          {{- if $common.nodeSelector }}
+          {{- include "batch.nodeSelector" $ | nindent 10 }}
+          {{- end }}
+          {{- if $common.affinity }}
+          {{- include "batch.affinity" $ | nindent 10 }}
+          {{- end }}
+          {{- if $common.tolerations }}
+          {{- include "batch.tolerations" $ | nindent 10 }}
+          {{- end }}
+          {{- if $common.volumes }}
+          volumes:
+            {{- include "batch.volumes" $ | nindent 12 }}
+          {{- end }}
+{{- end }}

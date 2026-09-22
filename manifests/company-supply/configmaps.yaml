@@ -1,0 +1,24 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-config
+  namespace: company-items
+  labels:
+    app: backend
+data:
+  DB_HOST: "postgres-service"
+  DB_PORT: "5432"
+  DB_NAME: "company_items"
+  PORT: "8080"
+
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frontend-config
+  namespace: company-items
+  labels:
+    app: frontend
+data:
+  REACT_APP_API_URL: "//backend-service:8080"
+  CHOKIDAR_USEPOLLING: "true"
